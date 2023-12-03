@@ -15,7 +15,8 @@ import json
 
 # Facult lists
 list_of_maps: list[str] = ["https://raw.githubusercontent.com/cmccomb/map-of-mech/",
-                           "https://raw.githubusercontent.com/cmccomb/map-of-civil/",]
+                           "https://raw.githubusercontent.com/cmccomb/map-of-civil/",
+                           "https://raw.githubusercontent.com/cmccomb/map-of-ece/",]
 
 FACULTY_EXTENSION: str = "main/faculty.csv"
 JSON_EXTENSION: str = "main/data/"
