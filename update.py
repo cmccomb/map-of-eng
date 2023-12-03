@@ -55,13 +55,8 @@ pca_embeddings: NDArray = sklearn.decomposition.PCA(n_components=2, random_state
 all_the_data['x'] = pca_embeddings[:, 0]
 all_the_data['y'] = pca_embeddings[:, 1]
 
-# Make some pretty colors! 
-colors: list[str] = [matplotlib.colors.to_hex(x) for x in
-    matplotlib.pyplot.cm.rainbow(numpy.linspace(0, 1, len(list_of_maps)))]
-
 # Plot the embeddings
-fig = plotly.express.scatter(all_the_data, x="x", y="y", hover_data=["title", "faculty"], color="department", symbol="faculty",
-                             color_discrete_sequence=colors)
+fig = plotly.express.scatter(all_the_data, x="x", y="y", hover_data=["title", "faculty"], color="department")
 
 # Make sure the axes are appropriately scaled
 fig.update_xaxes(visible=False, autorange=False,
