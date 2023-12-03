@@ -14,9 +14,9 @@ import urllib.request
 import json
 
 # Facult lists
-list_of_maps: list[str] = ["https://raw.githubusercontent.com/cmccomb/map-of-mech/",
-                           "https://raw.githubusercontent.com/cmccomb/map-of-civil/",
-                           "https://raw.githubusercontent.com/cmccomb/map-of-ece/",]
+list_of_maps: list[str] = [("Mechanical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-mech/"),
+                           ("Civil Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-civil/"),
+                           ("Electrical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-ece/"),]
 
 FACULTY_EXTENSION: str = "main/faculty.csv"
 JSON_EXTENSION: str = "main/data/"
@@ -25,20 +25,21 @@ all_names = []
 
 # Dump all the json files into a single dataframe
 all_the_data: pandas.DataFrame = pandas.DataFrame()
-for map in list_of_maps:
-    names = pandas.read_csv(map + FACULTY_EXTENSION)['name'].to_list()
-    ids = pandas.read_csv(map + FACULTY_EXTENSION)['id'].replace(numpy.nan, None).to_list()
+for map in list_of_maps:    
+    names = pandas.read_csv(map[1] + FACULTY_EXTENSION)['name'].to_list()
+    ids = pandas.read_csv(map[1] + FACULTY_EXTENSION)['id'].replace(numpy.nan, None).to_list()
     for (name, id) in zip(names, ids):
         print(name, id)
         if id:
             encoded_name = name.replace(" ", "%20")
-            json_url = map + JSON_EXTENSION + encoded_name + ".json"
+            json_url = map[1] + JSON_EXTENSION + encoded_name + ".json"
             all_names.append(name)
 
             with urllib.request.urlopen(json_url) as url:
                 json_dict: dict = json.load(url)
                 json_as_df: pandas.DataFrame = pandas.DataFrame.from_dict(json_dict)
                 json_as_df['faculty'] = name
+                json_as_df['department'] = map[0]
                 all_the_data: pandas.DataFrame = pandas.concat([all_the_data, json_as_df], axis=0)
 
 # Re-index the dataframe because it appears to eb necessary
@@ -59,7 +60,7 @@ colors: list[str] = [matplotlib.colors.to_hex(x) for x in
     matplotlib.pyplot.cm.gist_rainbow(numpy.linspace(0, 1, len(all_names)))]
 
 # Plot the embeddings
-fig = plotly.express.scatter(all_the_data, x="x", y="y", hover_data=["title"], color="faculty", symbol="faculty",
+fig = plotly.express.scatter(all_the_data, x="x", y="y", hover_data=["title", "faculty"], color="department", symbol="faculty",
                              color_discrete_sequence=colors)
 
 # Make sure the axes are appropriately scaled
