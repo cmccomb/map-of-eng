@@ -57,7 +57,7 @@ all_the_data['y'] = pca_embeddings[:, 1]
 
 # Make some pretty colors! 
 colors: list[str] = [matplotlib.colors.to_hex(x) for x in
-    matplotlib.pyplot.cm.gist_rainbow(numpy.linspace(0, 1, len(all_names)))]
+    matplotlib.pyplot.cm.rainbow(numpy.linspace(0, 1, len(list_of_maps)))]
 
 # Plot the embeddings
 fig = plotly.express.scatter(all_the_data, x="x", y="y", hover_data=["title", "faculty"], color="department", symbol="faculty",
