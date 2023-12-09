@@ -22,7 +22,7 @@ list_of_maps: list[tuple[str, str]] = [
     ("Chemical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-cheme/"),
     ("Engineering & Public Policy", "https://raw.githubusercontent.com/cmccomb/map-of-epp/"),
     ("Biomedical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-bme/"),
-    ("CMU-Africa", "https://github.com/cmccomb/map-of-cmu-africa"),
+    ("CMU-Africa", "https://raw.githubusercontent.com/cmccomb/map-of-cmu-africa/"),
 ]
 
 FACULTY_EXTENSION: str = "main/faculty.csv"
