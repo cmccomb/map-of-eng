@@ -21,6 +21,7 @@ list_of_maps: list[tuple[str, str]] = [
     ("Materials Science & Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-mse/"),
     ("Chemical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-cheme/"),
     ("Engineering & Public Policy", "https://raw.githubusercontent.com/cmccomb/map-of-epp/"),
+    ("Biomedical Engineering", "https://raw.githubusercontent.com/cmccomb/map-of-bme/"),
 ]
 
 FACULTY_EXTENSION: str = "main/faculty.csv"
