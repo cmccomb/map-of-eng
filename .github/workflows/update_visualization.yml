@@ -6,6 +6,8 @@ permissions:
 on:
   push:
     branches: [ main ]
+    paths:
+      - "data.csv"
   workflow_dispatch:
   workflow_run:
     workflows: ["update embeddings"]
