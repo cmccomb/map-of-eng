@@ -1,3 +1,4 @@
+import sys  # Used to read token argument from command line
 import json  # for saving and parsing json files
 
 import numpy  # for generic operations
@@ -7,7 +8,10 @@ import sklearn.decomposition  # orient tsne
 import sklearn.manifold  # make a tsne
 from numpy.typing import NDArray
 import urllib.request
+import datasets
 
+# Get API token from command line
+HF_TOKEN = sys.argv[1]
 
 # Faculty lists
 list_of_maps: list[tuple[str, str]] = [
@@ -98,3 +102,9 @@ all_the_data["x"] = pca_embeddings[:, 0]
 all_the_data["y"] = pca_embeddings[:, 1]
 
 all_the_data.to_csv("data.csv", index=False)
+
+
+# Convert to a dataset and upload to huggingface. Converting to pandas and then to dataset avoids some weird errors
+all_the_data["embedding"] = embeddings
+publication_dataset = datasets.Dataset.from_pandas(all_the_data)
+publication_dataset.push_to_hub("ccm/publications", token=HF_TOKEN)

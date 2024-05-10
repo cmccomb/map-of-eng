@@ -18,12 +18,13 @@ env:
 jobs:
   full_update:
     runs-on: ubuntu-latest
+    environment: huggingface
     steps:
       - uses: actions/checkout@v2
       - name: install dependencies
         run: pip install -r requirements.txt
       - name: create the visualization
-        run: python update_embeddings.py
+        run: python update_embeddings.py ${{secrets.API_TOKEN}}
       - name: commit and push changes
         uses: actions-js/push@master
         with:
