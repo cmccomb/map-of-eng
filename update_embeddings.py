@@ -106,5 +106,6 @@ all_the_data.to_csv("data.csv", index=False)
 
 # Convert to a dataset and upload to huggingface.
 all_the_data["embedding"] = embeddings.tolist()
+all_the_data.drop(columns=["index", "x", "y"], inplace=True)
 publication_dataset = datasets.Dataset.from_pandas(all_the_data)
 publication_dataset.push_to_hub("ccm/cmu-engineering-publications", token=HF_TOKEN)
