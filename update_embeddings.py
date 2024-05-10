@@ -107,4 +107,4 @@ all_the_data.to_csv("data.csv", index=False)
 # Convert to a dataset and upload to huggingface. Converting to pandas and then to dataset avoids some weird errors
 all_the_data["embedding"] = embeddings
 publication_dataset = datasets.Dataset.from_pandas(all_the_data)
-publication_dataset.push_to_hub("ccm/publications", token=HF_TOKEN)
+publication_dataset.push_to_hub("ccm/cmu-engineering-publications", token=HF_TOKEN)
