@@ -1,16 +1,25 @@
 # CMU Engineering Research
 
-This repository is a thin static visualization of the central
+This repository is the single interactive visualization of the central
 [`ccm/cmu-engineering-publications`](https://huggingface.co/datasets/ccm/cmu-engineering-publications)
 dataset.
 
 It does not scrape Google Scholar, run embedding models, or commit generated
-publication data. The browser fetches the precomputed `map-of-eng` map artifact
-and renders it with the dependency-free canvas client in `assets/map.js`.
+publication data. The browser fetches the precomputed full-corpus
+`maps/publications.json` artifact and renders it with the dependency-free canvas
+client in `assets/map.js`.
+
+Every department uses the same semantic layout. Visitors can select multiple
+departments or faculty authors, search publication titles, choose between
+highlighting matches in context and showing matches alone, and zoom to the
+resulting subset. Search dimensions combine with AND; multiple values within a
+dimension combine with OR.
 
 The canonical faculty registry, collection policy, normalized dataset schema,
 and artifact builder live in
 [`cmccomb/map-of-research`](https://github.com/cmccomb/map-of-research).
+The former department-specific `map-of-*` repositories are archived; their
+views are now filters here.
 
 ## Local preview
 

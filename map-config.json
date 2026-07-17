@@ -1,6 +1,7 @@
 {
-  "map_slug": "map-of-eng",
   "title": "CMU Engineering Research",
+  "heading": "Engineering research, mapped.",
   "dataset_id": "ccm/cmu-engineering-publications",
-  "dataset_revision": "main"
+  "dataset_revision": "main",
+  "artifact_path": "maps/publications.json"
 }
