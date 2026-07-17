@@ -25,15 +25,18 @@ const tooltip = document.querySelector("#tooltip");
 const searchInput = document.querySelector("#search");
 const groupFilter = document.querySelector("#group-filter");
 const resetButton = document.querySelector("#reset-view");
+const detailPanel = document.querySelector("#detail-panel");
+const detailTitle = document.querySelector("#detail-title");
+const detailMeta = document.querySelector("#detail-meta");
+const detailAuthors = document.querySelector("#detail-authors");
+const detailFaculty = document.querySelector("#detail-faculty");
+const detailLink = document.querySelector("#detail-link");
+const closeDetail = document.querySelector("#close-detail");
 
-function colorFor(group) {
-  let hash = 2166136261;
-  for (const character of group) {
-    hash ^= character.codePointAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue} 72% 62%)`;
+function colorFor(point) {
+  const selectedGroup = groupFilter.value;
+  if (selectedGroup && point.groups.includes(selectedGroup)) return "#62d8ff";
+  return "#aab5c0";
 }
 
 function resizeCanvas() {
@@ -85,7 +88,7 @@ function draw() {
     state.spatialIndex.set(cellKey, cell);
     context.beginPath();
     context.arc(screenPoint.x, screenPoint.y, 2.1, 0, Math.PI * 2);
-    context.fillStyle = colorFor(screenPoint.point.group);
+    context.fillStyle = colorFor(screenPoint.point);
     context.fill();
   }
   context.globalAlpha = 1;
@@ -102,9 +105,11 @@ function applyFilters() {
   const query = searchInput.value.trim().toLocaleLowerCase();
   const group = groupFilter.value;
   state.visiblePoints = state.points.filter((point) => {
-    if (group && point.group !== group) return false;
+    if (group && !point.groups.includes(group)) return false;
     if (!query) return true;
-    return `${point.title}\n${point.faculty}`.toLocaleLowerCase().includes(query);
+    return `${point.title}\n${point.authors}\n${point.faculty.join(" ")}\n${point.venue}`
+      .toLocaleLowerCase()
+      .includes(query);
   });
   statusElement.dataset.filteredCount = String(state.visiblePoints.length);
   const total = state.points.length.toLocaleString();
@@ -121,7 +126,7 @@ function applyFilters() {
 }
 
 function populateGroups(points) {
-  const groups = [...new Set(points.map((point) => point.group))].sort((a, b) =>
+  const groups = [...new Set(points.flatMap((point) => point.groups))].sort((a, b) =>
     a.localeCompare(b),
   );
   for (const group of groups) {
@@ -170,13 +175,30 @@ function showTooltip(event) {
   heading.textContent = point.title;
   const details = document.createElement("span");
   const year = point.year ? ` · ${point.year}` : "";
-  details.textContent = `${point.faculty}${year} · ${point.citation_count.toLocaleString()} citations`;
+  details.textContent = `${point.faculty.join(", ")}${year} · ${point.citation_count.toLocaleString()} citations`;
   tooltip.append(heading, details);
   const bounds = canvas.getBoundingClientRect();
   const tooltipWidth = Math.min(384, bounds.width - 32);
   tooltip.style.left = `${Math.min(nearest.pointerX + 14, bounds.width - tooltipWidth - 12)}px`;
   tooltip.style.top = `${Math.max(12, nearest.pointerY - 72)}px`;
   tooltip.hidden = false;
+}
+
+function showDetails(point) {
+  detailTitle.textContent = point.title;
+  const year = point.year || "Year unavailable";
+  const venue = point.venue || "Venue unavailable";
+  detailMeta.textContent = `${year} · ${venue} · ${point.citation_count.toLocaleString()} citations`;
+  detailAuthors.textContent = point.authors ? `Authors: ${point.authors}` : "";
+  detailFaculty.textContent = `CMU faculty: ${point.faculty.join(", ")}`;
+  if (point.source_url) {
+    detailLink.href = point.source_url;
+    detailLink.hidden = false;
+  } else {
+    detailLink.removeAttribute("href");
+    detailLink.hidden = true;
+  }
+  detailPanel.hidden = false;
 }
 
 canvas.addEventListener("wheel", (event) => {
@@ -227,6 +249,25 @@ canvas.addEventListener("pointerup", (event) => {
   canvas.releasePointerCapture(event.pointerId);
 });
 
+canvas.addEventListener("click", (event) => {
+  const nearest = nearestPoint(event.clientX, event.clientY);
+  if (nearest) showDetails(nearest.point);
+});
+
+canvas.addEventListener("keydown", (event) => {
+  const amount = event.shiftKey ? 80 : 30;
+  if (event.key === "+" || event.key === "=") state.scale = Math.min(25, state.scale * 1.2);
+  else if (event.key === "-") state.scale = Math.max(0.7, state.scale / 1.2);
+  else if (event.key === "ArrowLeft") state.offsetX += amount;
+  else if (event.key === "ArrowRight") state.offsetX -= amount;
+  else if (event.key === "ArrowUp") state.offsetY += amount;
+  else if (event.key === "ArrowDown") state.offsetY -= amount;
+  else if (event.key === "Escape") detailPanel.hidden = true;
+  else return;
+  event.preventDefault();
+  scheduleDraw();
+});
+
 canvas.addEventListener("pointerleave", () => {
   if (!state.dragging) tooltip.hidden = true;
 });
@@ -238,6 +279,10 @@ resetButton.addEventListener("click", () => {
   state.offsetX = 0;
   state.offsetY = 0;
   scheduleDraw();
+});
+closeDetail.addEventListener("click", () => {
+  detailPanel.hidden = true;
+  canvas.focus();
 });
 window.addEventListener("resize", resizeCanvas);
 
@@ -254,14 +299,18 @@ async function loadMap() {
     const artifactResponse = await fetch(artifactUrl, { cache: "no-cache" });
     if (!artifactResponse.ok) throw new Error("Could not load the publication artifact");
     const artifact = await artifactResponse.json();
-    if (artifact.schema_version !== 1 || !Array.isArray(artifact.points)) {
+    if (artifact.schema_version !== 2 || !Array.isArray(artifact.points)) {
       throw new Error("The publication artifact has an unsupported schema");
     }
     state.points = artifact.points;
     state.visiblePoints = artifact.points;
     populateGroups(artifact.points);
-    const updated = new Date(artifact.generated_at_utc).toLocaleDateString();
-    state.updatedLabel = `Dataset updated ${updated}`;
+    if (artifact.source_data_newest_at_utc) {
+      const updated = new Date(artifact.source_data_newest_at_utc).toLocaleDateString();
+      state.updatedLabel = `Newest profile refresh ${updated}`;
+    } else {
+      state.updatedLabel = "No verified Scholar profiles yet";
+    }
     applyFilters();
     resizeCanvas();
   } catch (error) {

@@ -48,12 +48,23 @@
         <div id="tooltip" class="tooltip" hidden></div>
         <div class="map-help">Scroll to zoom · drag to pan · hover for details</div>
       </section>
+
+      <aside id="detail-panel" class="detail-panel" aria-live="polite" hidden>
+        <button id="close-detail" class="close-detail" type="button" aria-label="Close publication details">×</button>
+        <p class="detail-eyebrow">Selected publication</p>
+        <h2 id="detail-title"></h2>
+        <p id="detail-meta" class="detail-meta"></p>
+        <p id="detail-authors"></p>
+        <p id="detail-faculty" class="detail-faculty"></p>
+        <a id="detail-link" target="_blank" rel="noopener noreferrer" hidden>Open publication source</a>
+      </aside>
     </main>
 
     <footer>
       <p>
-        Points are publications positioned from semantic embeddings. Scholar
-        metadata is cached centrally and refreshed conservatively.
+        Each point is one deduplicated work positioned from semantic embeddings.
+        Axes have no intrinsic meaning. Scholar profile observations are retained
+        centrally and refreshed conservatively.
       </p>
     </footer>
   </body>

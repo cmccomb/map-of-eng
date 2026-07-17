@@ -143,6 +143,54 @@ canvas.dragging {
   cursor: grabbing;
 }
 
+.detail-panel {
+  position: relative;
+  margin-top: 0.75rem;
+  padding: 1rem 3rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+}
+
+.detail-panel h2,
+.detail-panel p {
+  margin: 0;
+}
+
+.detail-panel h2 {
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+.detail-panel p + p,
+.detail-panel h2 + p,
+.detail-panel p + a {
+  margin-top: 0.55rem;
+}
+
+.detail-eyebrow {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.detail-meta,
+.detail-faculty {
+  color: var(--muted);
+}
+
+.close-detail {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  font-size: 1.3rem;
+}
+
 .tooltip {
   position: absolute;
   z-index: 2;
