@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 
 require("../assets/colors.js");
 
-const { generatePerceptualPalette } = globalThis.ResearchMapColors;
+const { generatePerceptualPalette, generateSequentialPalette } =
+  globalThis.ResearchMapColors;
 
 function relativeLuminance(hex) {
   const channels = hex
@@ -48,4 +49,27 @@ for (const theme of ["dark", "light"]) {
 assert.notDeepEqual(
   generatePerceptualPalette(42, "light"),
   generatePerceptualPalette(42, "dark"),
+);
+
+for (const theme of ["dark", "light"]) {
+  for (const mode of ["year", "citations"]) {
+    const palette = generateSequentialPalette(48, theme, mode);
+    assert.equal(palette.length, 48);
+    assert.equal(new Set(palette).size, 48);
+    assert.deepEqual(palette, generateSequentialPalette(48, theme, mode));
+    assert.ok(palette.every((color) => /^#[0-9a-f]{6}$/.test(color)));
+    assert.ok(
+      palette.every((color) => contrastRatio(color, backgrounds[theme]) >= 3.1),
+    );
+    assert.notEqual(palette[0], palette.at(-1));
+  }
+}
+
+assert.notDeepEqual(
+  generateSequentialPalette(48, "light", "year"),
+  generateSequentialPalette(48, "dark", "year"),
+);
+assert.notDeepEqual(
+  generateSequentialPalette(48, "dark", "year"),
+  generateSequentialPalette(48, "dark", "citations"),
 );

@@ -12,6 +12,16 @@
       lightnesses: [0.34, 0.39, 0.44, 0.49, 0.54, 0.59],
     }),
   });
+  const SEQUENTIAL_STOPS = Object.freeze({
+    dark: Object.freeze({
+      year: Object.freeze(["#b968d5", "#43c9b7", "#f0d05d"]),
+      citations: Object.freeze(["#68a4d8", "#42c3a0", "#f2b956"]),
+    }),
+    light: Object.freeze({
+      year: Object.freeze(["#722287", "#007269", "#785700"]),
+      citations: Object.freeze(["#275f90", "#007159", "#7d5000"]),
+    }),
+  });
 
   function linearToSrgb(value) {
     return value <= 0.0031308
@@ -74,8 +84,25 @@
 
   function rgbToHex(rgb) {
     return `#${rgb
+      .map((value) => Math.min(1, Math.max(0, value)))
       .map((value) => Math.round(value * 255).toString(16).padStart(2, "0"))
       .join("")}`;
+  }
+
+  function hexToOklab(hex) {
+    const channels = hex
+      .slice(1)
+      .match(/.{2}/g)
+      .map((channel) => Number.parseInt(channel, 16) / 255)
+      .map(srgbToLinear);
+    return linearRgbToOklab(channels);
+  }
+
+  function interpolateOklab(left, right, amount) {
+    const lab = left.map(
+      (channel, index) => channel + (right[index] - channel) * amount,
+    );
+    return rgbToHex(oklabToLinearRgb(lab).map(linearToSrgb));
   }
 
   function buildCandidates({ backgroundRgb, lightnesses }) {
@@ -156,7 +183,32 @@
     return palette;
   }
 
+  function generateSequentialPalette(
+    requestedCount,
+    requestedTheme = "dark",
+    requestedMode = "year",
+  ) {
+    const count = Math.max(0, Math.floor(Number(requestedCount) || 0));
+    if (!count) return [];
+    const theme = SEQUENTIAL_STOPS[requestedTheme] ? requestedTheme : "dark";
+    const mode = SEQUENTIAL_STOPS[theme][requestedMode]
+      ? requestedMode
+      : "year";
+    const stops = SEQUENTIAL_STOPS[theme][mode].map(hexToOklab);
+    if (count === 1) return [interpolateOklab(stops[0], stops.at(-1), 0.5)];
+    return Array.from({ length: count }, (_, index) => {
+      const position = (index / (count - 1)) * (stops.length - 1);
+      const leftIndex = Math.min(stops.length - 2, Math.floor(position));
+      return interpolateOklab(
+        stops[leftIndex],
+        stops[leftIndex + 1],
+        position - leftIndex,
+      );
+    });
+  }
+
   globalThis.ResearchMapColors = Object.freeze({
     generatePerceptualPalette,
+    generateSequentialPalette,
   });
 })();

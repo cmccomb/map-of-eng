@@ -1,6 +1,7 @@
 "use strict";
 
 const TITLE_COLOR_CAPACITY = 32;
+const SEQUENTIAL_COLOR_STEPS = 48;
 const core = globalThis.ResearchMapCore;
 
 const state = {
@@ -18,6 +19,11 @@ const state = {
   facultyColors: new Map(),
   titleColors: new Map(),
   titlePalette: [],
+  yearPalette: [],
+  citationPalette: [],
+  yearRange: null,
+  citationMaximum: 0,
+  citationMaximumClipped: false,
   activeTitleTerms: new Map(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
@@ -54,6 +60,30 @@ function resolvedTheme() {
 
 function themeColor(property, fallback) {
   return getComputedStyle(canvas).getPropertyValue(property).trim() || fallback;
+}
+
+function colorAt(palette, amount) {
+  if (!palette.length) return themeColor("--canvas-default", "#79b7cf");
+  const position = Math.min(1, Math.max(0, Number(amount) || 0));
+  return palette[Math.round(position * (palette.length - 1))];
+}
+
+function yearColor(point) {
+  if (!Number.isInteger(point.year) || !state.yearRange) {
+    return themeColor("--canvas-unassigned", "#657789");
+  }
+  const { minimum, maximum } = state.yearRange;
+  const amount =
+    maximum === minimum ? 0.5 : (point.year - minimum) / (maximum - minimum);
+  return colorAt(state.yearPalette, amount);
+}
+
+function citationColor(point) {
+  const citations = Math.max(0, Number(point.citation_count) || 0);
+  const amount = state.citationMaximum
+    ? Math.log1p(citations) / Math.log1p(state.citationMaximum)
+    : 0.5;
+  return colorAt(state.citationPalette, amount);
 }
 
 const titleElement = document.querySelector("#map-title");
@@ -253,6 +283,8 @@ function colorFor(point) {
       if (point._title?.includes(query)) return state.titleColors.get(query);
     }
   }
+  if (state.colorMode === "year") return yearColor(point);
+  if (state.colorMode === "citations") return citationColor(point);
   if (state.colorMode === "faculty") {
     const personId = core.preferredId(
       point.faculty_ids,
@@ -297,8 +329,10 @@ function drawMatched(screenPoints) {
     else if (matchTotal > 1000) radius = 1.25;
     else radius = 1.7;
   }
+  const quantitativeMode = ["year", "citations"].includes(state.colorMode);
+  const alpha = state.filtersActive ? 0.9 : quantitativeMode ? 0.68 : 0.54;
   for (const [color, group] of groups) {
-    drawBatch(group, radius, color, state.filtersActive ? 0.9 : 0.54);
+    drawBatch(group, radius, color, alpha);
   }
   if (state.filtersActive && state.matchedPoints.length <= 1500) {
     context.save();
@@ -437,6 +471,99 @@ function appendLegendItem(label, color, className = "legend-dot-match") {
   mapLegend.append(item);
 }
 
+function compactNumber(value) {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function appendContinuousLegend({ title, labels, palette, accessibleLabel }) {
+  const item = document.createElement("span");
+  item.className = "continuous-legend";
+  item.setAttribute("role", "img");
+  item.setAttribute("aria-label", accessibleLabel);
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const gradient = document.createElement("i");
+  gradient.className = "continuous-gradient";
+  gradient.setAttribute("aria-hidden", "true");
+  gradient.style.backgroundImage = `linear-gradient(90deg, ${palette
+    .map(
+      (color, index) =>
+        `${color} ${((index / Math.max(1, palette.length - 1)) * 100).toFixed(2)}%`,
+    )
+    .join(", ")})`;
+  const ticks = document.createElement("span");
+  ticks.className = "continuous-ticks";
+  for (const label of labels) {
+    const tick = document.createElement("span");
+    tick.textContent = label;
+    ticks.append(tick);
+  }
+  item.append(heading, gradient, ticks);
+  mapLegend.append(item);
+}
+
+function renderYearLegend() {
+  if (!state.yearRange) {
+    appendLegendItem(
+      "Year unavailable",
+      themeColor("--canvas-unassigned", "#657789"),
+    );
+    return;
+  }
+  const { minimum, maximum } = state.yearRange;
+  const midpoint = Math.round((minimum + maximum) / 2);
+  const minimumLabel = state.yearRange.clippedMinimum
+    ? `≤${minimum}`
+    : String(minimum);
+  const maximumLabel = state.yearRange.clippedMaximum
+    ? `≥${maximum}`
+    : String(maximum);
+  appendContinuousLegend({
+    title: "Publication year",
+    labels:
+      minimum === maximum
+        ? [String(minimum)]
+        : [minimumLabel, String(midpoint), maximumLabel],
+    palette: state.yearPalette,
+    accessibleLabel:
+      minimum === maximum
+        ? `All dated publications are from ${minimum}`
+        : `Publication year color scale from ${minimum}${
+            state.yearRange.clippedMinimum ? " and earlier" : ""
+          } to ${maximum}${
+            state.yearRange.clippedMaximum ? " and later" : ""
+          }`,
+  });
+  if (state.matchedPoints.some((point) => !Number.isInteger(point.year))) {
+    appendLegendItem(
+      "Year unavailable",
+      themeColor("--canvas-unassigned", "#657789"),
+    );
+  }
+}
+
+function renderCitationLegend() {
+  const maximum = state.citationMaximum;
+  const midpoint = Math.round(Math.expm1(Math.log1p(maximum) / 2));
+  const maximumLabel = state.citationMaximumClipped
+    ? `≥${compactNumber(maximum)}`
+    : compactNumber(maximum);
+  appendContinuousLegend({
+    title: "Citations · log scale",
+    labels: maximum
+      ? ["0", compactNumber(midpoint), maximumLabel]
+      : ["0"],
+    palette: state.citationPalette,
+    accessibleLabel: `Citation count color scale from 0 to ${maximum.toLocaleString()}${
+      state.citationMaximumClipped ? " and higher" : ""
+    }, logarithmic when nonzero`,
+  });
+}
+
 function colorKeyItems(mode = state.colorMode) {
   const isFaculty = mode === "faculty";
   const idField = isFaculty ? "person_id" : "department_id";
@@ -490,7 +617,11 @@ function appendColorKeyButton(items, mode) {
 
 function renderLegend() {
   mapLegend.replaceChildren();
-  if (state.colorMode === "faculty") {
+  if (state.colorMode === "year") {
+    renderYearLegend();
+  } else if (state.colorMode === "citations") {
+    renderCitationLegend();
+  } else if (state.colorMode === "faculty") {
     const items = colorKeyItems("faculty");
     const selectedItems = items.filter((item) => item.selected);
     for (const item of selectedItems.slice(0, 3)) {
@@ -548,7 +679,7 @@ function renderLegend() {
         colorFor({ _title: "", department_ids: [], faculty_ids: [] }),
       );
     }
-  } else {
+  } else if (state.colorMode === "department") {
     const items = colorKeyItems("department");
     const selectedItems = items.filter((item) => item.selected);
     if (selectedItems.length) {
@@ -682,6 +813,55 @@ function initializeDepartmentColors() {
   state.departments.forEach((department, index) => {
     state.departmentColors.set(department.department_id, palette[index]);
   });
+}
+
+function initializeSequentialColors() {
+  const generator = globalThis.ResearchMapColors?.generateSequentialPalette;
+  if (!generator) throw new Error("Sequential color generator is unavailable");
+  state.yearPalette = generator(
+    SEQUENTIAL_COLOR_STEPS,
+    resolvedTheme(),
+    "year",
+  );
+  state.citationPalette = generator(
+    SEQUENTIAL_COLOR_STEPS,
+    resolvedTheme(),
+    "citations",
+  );
+  const years = state.points
+    .map((point) => point.year)
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right);
+  if (years.length) {
+    const actualMinimum = years[0];
+    const actualMaximum = years.at(-1);
+    const useRobustRange = years.length >= 100;
+    const minimum = useRobustRange
+      ? years[Math.floor((years.length - 1) * 0.01)]
+      : actualMinimum;
+    const maximum = useRobustRange
+      ? years[Math.floor((years.length - 1) * 0.99)]
+      : actualMaximum;
+    state.yearRange = {
+      minimum,
+      maximum,
+      clippedMinimum: actualMinimum < minimum,
+      clippedMaximum: actualMaximum > maximum,
+    };
+  } else {
+    state.yearRange = null;
+  }
+  const citations = state.points
+    .map((point) => Math.max(0, Number(point.citation_count) || 0))
+    .sort((left, right) => left - right);
+  const actualCitationMaximum = citations.at(-1) || 0;
+  const robustCitationMaximum =
+    citations.length >= 100
+      ? citations[Math.floor((citations.length - 1) * 0.99)]
+      : actualCitationMaximum;
+  state.citationMaximum = robustCitationMaximum || actualCitationMaximum;
+  state.citationMaximumClipped =
+    actualCitationMaximum > state.citationMaximum;
 }
 
 function createMultiSelect({
@@ -886,6 +1066,7 @@ function refreshThemeColors() {
     state.titlePalette = [];
     initializeFacultyColors();
     initializeDepartmentColors();
+    initializeSequentialColors();
     for (const query of state.activeTitleTerms.keys()) ensureTitleColor(query);
     renderLegend();
     if (colorKeyDialog.open) renderColorKey();
@@ -1402,6 +1583,11 @@ async function loadMap() {
     state.facultyColors = new Map();
     state.titleColors = new Map();
     state.titlePalette = [];
+    state.yearPalette = [];
+    state.citationPalette = [];
+    state.yearRange = null;
+    state.citationMaximum = 0;
+    state.citationMaximumClipped = false;
     state.selectedWorkId = "";
     detailPanel.hidden = true;
     if (artifact.warnings.length) console.warn(...artifact.warnings);
@@ -1409,6 +1595,7 @@ async function loadMap() {
     populateLayouts();
     initializeFacultyColors();
     initializeDepartmentColors();
+    initializeSequentialColors();
     resetFilters();
     const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
     state.sourceLabel = updated
