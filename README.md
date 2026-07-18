@@ -25,6 +25,9 @@ and artifact builder live in
 The former department-specific `map-of-*` repositories are archived; their
 views are now filters here.
 
+The Pages deployment stamps CSS and JavaScript URLs with the deployed commit so
+browsers cannot combine a new page with a cached client from an older release.
+
 ## Local preview
 
 Serve this directory with any static file server. Opening `index.html` directly
