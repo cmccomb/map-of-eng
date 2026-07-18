@@ -192,7 +192,7 @@ h1 {
   border: 0;
 }
 
-.field + .author-field,
+.title-field + .author-field,
 .author-field + .department-field,
 .department-field + .color-fieldset,
 .color-fieldset + .mode-fieldset {
@@ -237,6 +237,17 @@ canvas:focus-visible {
 input[type="search"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px #67d5ff20;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .author-field,
@@ -306,9 +317,17 @@ input[type="search"]:focus {
   color: #dff5ff;
   cursor: pointer;
   font-size: 0.72rem;
+  max-width: 100%;
+}
+
+.filter-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .filter-chip i {
+  flex: 0 0 auto;
   color: var(--accent);
   font-style: normal;
 }
@@ -331,6 +350,10 @@ input[type="search"]:focus {
   border: 1px solid var(--line-strong);
   border-radius: 0.48rem;
   background: #08131e;
+}
+
+.color-control {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .segmented-control label {

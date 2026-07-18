@@ -49,15 +49,26 @@
           </button>
         </div>
 
-        <label class="field" for="title-search">
-          <span>Publication title</span>
-          <input
-            id="title-search"
-            type="search"
-            autocomplete="off"
-            placeholder="e.g., additive manufacturing"
-          >
-        </label>
+        <div class="title-field">
+          <label class="field" for="title-search">
+            <span>Publication title</span>
+            <input
+              id="title-search"
+              type="search"
+              aria-describedby="title-search-hint"
+              autocomplete="off"
+              placeholder="Type a term, then press Enter"
+            >
+          </label>
+          <span id="title-search-hint" class="sr-only">
+            Press Enter to add each title term. Multiple terms match any.
+          </span>
+          <div
+            id="selected-titles"
+            class="selected-filters"
+            aria-label="Selected publication title terms"
+          ></div>
+        </div>
 
         <div class="author-field">
           <label class="field" for="author-search">
@@ -115,7 +126,11 @@
 
         <fieldset class="color-fieldset">
           <legend>Color matches by</legend>
-          <div class="segmented-control">
+          <div class="segmented-control color-control">
+            <label>
+              <input type="radio" name="color-mode" value="title">
+              <span>Title</span>
+            </label>
             <label>
               <input type="radio" name="color-mode" value="department" checked>
               <span>Department</span>
@@ -126,8 +141,8 @@
             </label>
           </div>
           <p class="field-note color-note">
-            Every faculty member has a distinct, perceptually spaced color.
-            On coauthored work, selected faculty take priority.
+            Title terms and departments follow selected filters. Faculty
+            colors remain unique across the corpus.
           </p>
         </fieldset>
 
