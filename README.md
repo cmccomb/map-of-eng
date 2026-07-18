@@ -11,8 +11,10 @@ client in `assets/map.js`.
 
 Every department uses the same semantic layout. Visitors can select multiple
 departments or faculty authors, search publication titles, choose between
-highlighting matches in context and showing matches alone, and zoom to the
-resulting subset. Search dimensions combine with AND; multiple values within a
+highlighting matches in context and showing matches alone, color comparisons by
+selected department or faculty author, and zoom to the resulting subset. Point
+size adapts to result density so full-corpus structure and sparse searches both
+remain legible. Search dimensions combine with AND; multiple values within a
 dimension combine with OR.
 
 The canonical faculty registry, collection policy, normalized dataset schema,

@@ -8,7 +8,7 @@
       content="default-src 'self'; connect-src 'self' https://huggingface.co https://*.hf.co; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'"
     >
     <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#08111b">
+    <meta name="theme-color" content="#0a141e">
     <meta
       name="description"
       content="Explore the semantic landscape of CMU Engineering publications by department, faculty author, and title."
@@ -24,8 +24,7 @@
         <p class="eyebrow">Carnegie Mellon University</p>
         <h1 id="map-title">Engineering research, mapped.</h1>
         <p class="dek">
-          Explore publications across CMU Engineering. Nearby works use similar
-          language; filter the landscape without changing its shared layout.
+          Explore CMU Engineering publications. Nearby points share similar language.
         </p>
       </div>
       <div class="source-block">
@@ -92,6 +91,20 @@
           <legend>Departments and programs</legend>
           <p class="field-note">Select any number. Multiple selections match any.</p>
           <div id="department-options" class="department-options"></div>
+        </fieldset>
+
+        <fieldset class="color-fieldset">
+          <legend>Color matches by</legend>
+          <div class="segmented-control">
+            <label>
+              <input type="radio" name="color-mode" value="department" checked>
+              <span>Department</span>
+            </label>
+            <label>
+              <input type="radio" name="color-mode" value="faculty">
+              <span>Faculty</span>
+            </label>
+          </div>
         </fieldset>
 
         <fieldset class="mode-fieldset">
