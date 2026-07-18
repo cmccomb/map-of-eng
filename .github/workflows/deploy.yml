@@ -7,7 +7,13 @@ on:
       - index.html
       - map-config.json
       - assets/**
+      - scripts/**
+      - package.json
       - .github/workflows/deploy.yml
+  schedule:
+    - cron: "17 10 * * *"
+  repository_dispatch:
+    types: [dataset-published]
   workflow_dispatch:
 
 permissions:
@@ -31,23 +37,46 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Stage the Pages artifact
+      - name: Check whether scheduled data are new
+        id: freshness
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          mkdir _site
-          cp index.html map-config.json _site/
-          cp -R assets _site/assets
-          asset_version="${GITHUB_SHA::12}"
-          sed -i "s|assets/map.css|assets/map.css?v=${asset_version}|" _site/index.html
-          sed -i "s|assets/theme.js|assets/theme.js?v=${asset_version}|" _site/index.html
-          sed -i "s|assets/colors.js|assets/colors.js?v=${asset_version}|" _site/index.html
-          sed -i "s|assets/map-core.js|assets/map-core.js?v=${asset_version}|" _site/index.html
-          sed -i "s|assets/map.js|assets/map.js?v=${asset_version}|" _site/index.html
+          if [ "$EVENT_NAME" != "schedule" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          available_revision=$(node scripts/build-site.js --revision-only)
+          deployed_revision=$(
+            curl --fail --silent --show-error --max-time 15 \
+              https://cmccomb.github.io/map-of-eng/map-config.json |
+              node -e '
+                let input = "";
+                process.stdin.on("data", (chunk) => { input += chunk; });
+                process.stdin.on("end", () => {
+                  try { process.stdout.write(JSON.parse(input).dataset_revision || ""); }
+                  catch { process.stdout.write(""); }
+                });
+              '
+          )
+          if [ "$available_revision" = "$deployed_revision" ]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "The deployed site already uses $available_revision"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Stage the pinned, same-origin site
+        if: steps.freshness.outputs.deploy == 'true'
+        run: node scripts/build-site.js
       - name: Configure Pages
+        if: steps.freshness.outputs.deploy == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Upload Pages artifact
+        if: steps.freshness.outputs.deploy == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
       - name: Deploy to GitHub Pages
+        if: steps.freshness.outputs.deploy == 'true'
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

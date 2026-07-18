@@ -19,6 +19,17 @@ test("configuration parsing builds an encoded Hugging Face artifact URL", () => 
   );
 });
 
+test("configuration parsing accepts a safe same-origin artifact path", () => {
+  const config = core.parseConfig({
+    title: "Research",
+    artifact_url: "data/publications.0123456789abcdef.json",
+  });
+  assert.equal(
+    core.artifactUrl(config),
+    "data/publications.0123456789abcdef.json",
+  );
+});
+
 test("configuration parsing rejects unsafe URLs and paths", () => {
   assert.throws(
     () => core.parseConfig({ title: "Map", artifact_url: "javascript:alert(1)" }),

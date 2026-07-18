@@ -2,6 +2,7 @@
 .playwright-cli/
 output/playwright/
 node_modules/
+_site/
 playwright-report/
 test-results/
 blob-report/

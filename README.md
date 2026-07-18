@@ -5,9 +5,12 @@ This repository is the single interactive visualization of the central
 dataset.
 
 It does not scrape Google Scholar, run embedding models, or commit generated
-publication data. The browser fetches the precomputed full-corpus
-`maps/publications.json` artifact and renders it with the dependency-free canvas
-client in `assets/map.js`. It never computes embeddings or layouts.
+publication data. The Pages build resolves the dataset to an immutable Hugging
+Face revision, validates its precomputed full-corpus `maps/publications.json`
+artifact, and packages that artifact with the deployed site. The browser loads
+the same-origin copy with normal HTTP caching and renders it with the
+dependency-free canvas client in `assets/map.js`. It never computes embeddings
+or layouts.
 
 Every department uses the same semantic layouts. Visitors can switch between a
 PCA view of broad global structure and a t-SNE view of local topical
@@ -51,14 +54,19 @@ views are now filters here.
 
 The Pages deployment stamps CSS and JavaScript URLs with the deployed commit so
 browsers cannot combine a new page with cached assets from an older release.
+A daily workflow compares the current Hugging Face revision with the deployed
+revision and rebuilds only when the data changed. Manual and `dataset-published`
+dispatches can rebuild immediately.
 
 ## Local preview
 
-Serve this directory with any static file server. Opening `index.html` directly
-may be blocked by browser cross-origin rules.
+Build the same site artifact used by Pages, then serve it with any static file
+server. The build downloads the current public dataset revision; opening
+`index.html` directly may be blocked by browser cross-origin rules.
 
 ```bash
-python -m http.server 8000
+npm run build
+python -m http.server 8000 --directory _site
 ```
 
 Then open <http://localhost:8000>.

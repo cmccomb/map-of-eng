@@ -76,10 +76,22 @@
     const artifactUrl = optionalString(config.artifact_url, { maxLength: 4000 });
     if (artifactUrl) {
       const absoluteUrl = safeHttpUrl(artifactUrl);
-      if (!absoluteUrl) {
-        throw new ArtifactError("config.artifact_url must use HTTP or HTTPS");
+      if (absoluteUrl) {
+        return { title, heading, artifact_url: absoluteUrl };
       }
-      return { title, heading, artifact_url: absoluteUrl };
+      if (
+        artifactUrl.startsWith("//") ||
+        /^[A-Za-z][A-Za-z0-9+.-]*:/.test(artifactUrl)
+      ) {
+        throw new ArtifactError(
+          "config.artifact_url must use HTTP, HTTPS, or a relative path",
+        );
+      }
+      return {
+        title,
+        heading,
+        artifact_url: safeRelativePath(artifactUrl, "config.artifact_url"),
+      };
     }
     const datasetId = requiredString(config.dataset_id, "config.dataset_id", {
       maxLength: 200,
