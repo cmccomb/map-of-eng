@@ -317,6 +317,10 @@ input[type="search"]:focus {
   line-height: 1.4;
 }
 
+.color-note {
+  margin: 0.5rem 0 0;
+}
+
 .department-options {
   display: grid;
   gap: 0.18rem;
