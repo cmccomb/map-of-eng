@@ -1,6 +1,5 @@
 "use strict";
 
-const UNASSIGNED_FACULTY_COLOR = "#657789";
 const TITLE_COLOR_CAPACITY = 32;
 const core = globalThis.ResearchMapCore;
 
@@ -46,6 +45,17 @@ const state = {
 
 const canvas = document.querySelector("#research-map");
 const context = canvas.getContext("2d", { alpha: false });
+
+function resolvedTheme() {
+  return document.documentElement.dataset.resolvedTheme === "light"
+    ? "light"
+    : "dark";
+}
+
+function themeColor(property, fallback) {
+  return getComputedStyle(canvas).getPropertyValue(property).trim() || fallback;
+}
+
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
@@ -208,7 +218,7 @@ function mapToScreen(point, width, height) {
 function drawGrid(width, height) {
   const spacing = 48;
   context.save();
-  context.strokeStyle = "#ffffff08";
+  context.strokeStyle = themeColor("--canvas-grid", "#ffffff08");
   context.lineWidth = 1;
   context.beginPath();
   for (let x = 0.5; x < width; x += spacing) {
@@ -250,7 +260,7 @@ function colorFor(point) {
       state.facultyColors,
     );
     if (personId) return state.facultyColors.get(personId);
-    return UNASSIGNED_FACULTY_COLOR;
+    return themeColor("--canvas-unassigned", "#657789");
   }
   if (state.colorMode === "department") {
     const departmentId = core.preferredId(
@@ -265,9 +275,9 @@ function colorFor(point) {
     state.activeFaculty.size ||
     state.activeDepartments.size
   ) {
-    return "#73c5df";
+    return themeColor("--canvas-highlight", "#73c5df");
   }
-  return "#79b7cf";
+  return themeColor("--canvas-default", "#79b7cf");
 }
 
 function drawMatched(screenPoints) {
@@ -292,7 +302,7 @@ function drawMatched(screenPoints) {
   }
   if (state.filtersActive && state.matchedPoints.length <= 1500) {
     context.save();
-    context.strokeStyle = "#f4fbff";
+    context.strokeStyle = themeColor("--canvas-selected", "#f4fbff");
     context.globalAlpha = 0.58;
     context.lineWidth = 0.65;
     context.beginPath();
@@ -327,7 +337,7 @@ function drawSelected(screenPoints) {
   );
   if (!selected) return;
   context.save();
-  context.strokeStyle = "#ffffff";
+  context.strokeStyle = themeColor("--canvas-selected", "#ffffff");
   context.globalAlpha = 0.95;
   context.lineWidth = 1.5;
   context.beginPath();
@@ -339,7 +349,7 @@ function drawSelected(screenPoints) {
 function draw() {
   state.framePending = false;
   const bounds = canvas.getBoundingClientRect();
-  context.fillStyle = "#071019";
+  context.fillStyle = themeColor("--canvas", "#071019");
   context.fillRect(0, 0, bounds.width, bounds.height);
   drawGrid(bounds.width, bounds.height);
 
@@ -361,7 +371,12 @@ function draw() {
 
   const contextPoints = state.screenPoints.filter((point) => !point.matched);
   const matchedPoints = state.screenPoints.filter((point) => point.matched);
-  drawBatch(contextPoints, 0.55, "#748696", 0.12);
+  drawBatch(
+    contextPoints,
+    0.55,
+    themeColor("--canvas-context", "#748696"),
+    0.12,
+  );
   drawMatched(matchedPoints);
   drawSelected(state.screenPoints);
 }
@@ -482,7 +497,10 @@ function renderLegend() {
       appendLegendItem(item.label, item.color);
     }
     if (selectedItems.length > 3) {
-      appendLegendItem(`+${selectedItems.length - 3} selected`, "#9dabb9");
+      appendLegendItem(
+        `+${selectedItems.length - 3} selected`,
+        themeColor("--quiet", "#9dabb9"),
+      );
     }
     const hasUnmappedMatches = state.matchedPoints.some(
       (point) =>
@@ -493,12 +511,21 @@ function renderLegend() {
     if (items.length) {
       appendColorKeyButton(items, "faculty");
       if (hasUnmappedMatches) {
-        appendLegendItem("No mapped faculty", UNASSIGNED_FACULTY_COLOR);
+        appendLegendItem(
+          "No mapped faculty",
+          themeColor("--canvas-unassigned", "#657789"),
+        );
       }
     } else if (state.matchedPoints.length && hasUnmappedMatches) {
-      appendLegendItem("No mapped faculty", UNASSIGNED_FACULTY_COLOR);
+      appendLegendItem(
+        "No mapped faculty",
+        themeColor("--canvas-unassigned", "#657789"),
+      );
     } else {
-      appendLegendItem("No faculty matches", UNASSIGNED_FACULTY_COLOR);
+      appendLegendItem(
+        "No faculty matches",
+        themeColor("--canvas-unassigned", "#657789"),
+      );
     }
   } else if (state.colorMode === "title") {
     const activeTerms = [...state.activeTitleTerms].map(([query, label]) => ({
@@ -510,7 +537,10 @@ function renderLegend() {
         appendLegendItem(term.label, term.color);
       }
       if (activeTerms.length > 4) {
-        appendLegendItem(`+${activeTerms.length - 4} more`, "#9dabb9");
+        appendLegendItem(
+          `+${activeTerms.length - 4} more`,
+          themeColor("--quiet", "#9dabb9"),
+        );
       }
     } else {
       appendLegendItem(
@@ -526,7 +556,10 @@ function renderLegend() {
         appendLegendItem(item.label, item.color);
       }
       if (selectedItems.length > 4) {
-        appendLegendItem(`+${selectedItems.length - 4} more`, "#9dabb9");
+        appendLegendItem(
+          `+${selectedItems.length - 4} more`,
+          themeColor("--quiet", "#9dabb9"),
+        );
       }
     }
     if (items.length) {
@@ -534,12 +567,16 @@ function renderLegend() {
     } else {
       appendLegendItem(
         "No department matches",
-        UNASSIGNED_FACULTY_COLOR,
+        themeColor("--canvas-unassigned", "#657789"),
       );
     }
   }
   if (state.filtersActive && state.displayMode === "highlight") {
-    appendLegendItem("Context", "#748696", "legend-dot-context");
+    appendLegendItem(
+      "Context",
+      themeColor("--canvas-context", "#748696"),
+      "legend-dot-context",
+    );
   }
 }
 
@@ -641,7 +678,7 @@ function applyFilters() {
 function initializeDepartmentColors() {
   const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
   if (!generator) throw new Error("Department color generator is unavailable");
-  const palette = generator(state.departments.length);
+  const palette = generator(state.departments.length, resolvedTheme());
   state.departments.forEach((department, index) => {
     state.departmentColors.set(department.department_id, palette[index]);
   });
@@ -835,10 +872,26 @@ function createMultiSelect({
 function initializeFacultyColors() {
   const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
   if (!generator) throw new Error("Faculty color generator is unavailable");
-  const palette = generator(state.faculty.length);
+  const palette = generator(state.faculty.length, resolvedTheme());
   state.facultyColors = new Map(
     state.faculty.map((person, index) => [person.person_id, palette[index]]),
   );
+}
+
+function refreshThemeColors() {
+  if (state.departments.length || state.faculty.length) {
+    state.departmentColors = new Map();
+    state.facultyColors = new Map();
+    state.titleColors = new Map();
+    state.titlePalette = [];
+    initializeFacultyColors();
+    initializeDepartmentColors();
+    for (const query of state.activeTitleTerms.keys()) ensureTitleColor(query);
+    renderLegend();
+    if (colorKeyDialog.open) renderColorKey();
+  }
+  tooltip.hidden = true;
+  scheduleDraw();
 }
 
 function ensureTitleColor(query) {
@@ -851,7 +904,7 @@ function ensureTitleColor(query) {
       TITLE_COLOR_CAPACITY,
       state.titlePalette.length * 2,
     );
-    state.titlePalette = generator(nextCapacity);
+    state.titlePalette = generator(nextCapacity, resolvedTheme());
   }
   state.titleColors.set(query, state.titlePalette[colorIndex]);
 }
@@ -1214,6 +1267,7 @@ closeDetail.addEventListener("click", () => {
   canvas.focus();
   scheduleDraw();
 });
+window.addEventListener("research-map-theme-change", refreshThemeColors);
 if ("ResizeObserver" in window) {
   const canvasResizeObserver = new ResizeObserver(resizeCanvas);
   canvasResizeObserver.observe(canvas);
