@@ -24,8 +24,10 @@ const state = {
   departmentById: new Map(),
   facultyById: new Map(),
   departmentColors: new Map(),
+  facultyColors: new Map(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
+  colorMode: "department",
   displayMode: "highlight",
   filtersActive: false,
   selectedWorkId: "",
@@ -158,14 +160,20 @@ function drawBatch(screenPoints, radius, fillStyle, alpha) {
 }
 
 function colorFor(point) {
-  if (state.activeDepartments.size) {
+  if (state.colorMode === "faculty" && state.activeFaculty.size) {
+    const personId = point.faculty_ids.find((candidate) =>
+      state.activeFaculty.has(candidate),
+    );
+    if (personId) return state.facultyColors.get(personId);
+  }
+  if (state.colorMode === "department" && state.activeDepartments.size) {
     const departmentId = point.department_ids.find((candidate) =>
       state.activeDepartments.has(candidate),
     );
     if (departmentId) return state.departmentColors.get(departmentId);
   }
-  if (state.activeFaculty.size) return "#ffbd68";
-  if (titleSearch.value.trim()) return "#67d5ff";
+  if (state.activeFaculty.size || state.activeDepartments.size) return "#73c5df";
+  if (titleSearch.value.trim()) return "#73c5df";
   return "#79b7cf";
 }
 
@@ -178,19 +186,32 @@ function drawMatched(screenPoints) {
     group.push(screenPoint);
     groups.set(color, group);
   }
-  const radius = state.filtersActive ? 3.15 : 1.65;
-  for (const [color, group] of groups) {
-    drawBatch(group, radius, color, state.filtersActive ? 0.88 : 0.56);
-  }
+  let radius = 0.72;
   if (state.filtersActive) {
+    const matchTotal = state.matchedPoints.length;
+    if (matchTotal > 7500) radius = 0.9;
+    else if (matchTotal > 3000) radius = 1.05;
+    else if (matchTotal > 1000) radius = 1.25;
+    else radius = 1.7;
+  }
+  for (const [color, group] of groups) {
+    drawBatch(group, radius, color, state.filtersActive ? 0.9 : 0.54);
+  }
+  if (state.filtersActive && state.matchedPoints.length <= 1500) {
     context.save();
     context.strokeStyle = "#f4fbff";
-    context.globalAlpha = 0.66;
-    context.lineWidth = 0.8;
+    context.globalAlpha = 0.58;
+    context.lineWidth = 0.65;
     context.beginPath();
     for (const screenPoint of screenPoints) {
-      context.moveTo(screenPoint.x + 4.1, screenPoint.y);
-      context.arc(screenPoint.x, screenPoint.y, 4.1, 0, Math.PI * 2);
+      context.moveTo(screenPoint.x + radius + 0.75, screenPoint.y);
+      context.arc(
+        screenPoint.x,
+        screenPoint.y,
+        radius + 0.75,
+        0,
+        Math.PI * 2,
+      );
     }
     context.stroke();
     context.restore();
@@ -225,7 +246,7 @@ function drawSelected(screenPoints) {
 function draw() {
   state.framePending = false;
   const bounds = canvas.getBoundingClientRect();
-  context.fillStyle = "#07101a";
+  context.fillStyle = "#071019";
   context.fillRect(0, 0, bounds.width, bounds.height);
   drawGrid(bounds.width, bounds.height);
 
@@ -247,7 +268,7 @@ function draw() {
 
   const contextPoints = state.screenPoints.filter((point) => !point.matched);
   const matchedPoints = state.screenPoints.filter((point) => point.matched);
-  drawBatch(contextPoints, 1.05, "#748696", 0.16);
+  drawBatch(contextPoints, 0.55, "#748696", 0.12);
   drawMatched(matchedPoints);
   drawSelected(state.screenPoints);
 }
@@ -306,21 +327,37 @@ function appendLegendItem(label, color, className = "legend-dot-match") {
 
 function renderLegend() {
   mapLegend.replaceChildren();
-  const activeDepartments = state.departments.filter((department) =>
-    state.activeDepartments.has(department.department_id),
-  );
-  if (activeDepartments.length) {
-    for (const department of activeDepartments.slice(0, 4)) {
+  const activeGroups =
+    state.colorMode === "faculty"
+      ? state.faculty
+          .filter((person) => state.activeFaculty.has(person.person_id))
+          .map((person) => ({
+            label: person.display_name,
+            color: state.facultyColors.get(person.person_id),
+          }))
+      : state.departments
+          .filter((department) =>
+            state.activeDepartments.has(department.department_id),
+          )
+          .map((department) => ({
+            label: department.title,
+            color: state.departmentColors.get(department.department_id),
+          }));
+  if (activeGroups.length) {
+    for (const group of activeGroups.slice(0, 4)) {
       appendLegendItem(
-        department.title,
-        state.departmentColors.get(department.department_id),
+        group.label,
+        group.color,
       );
     }
-    if (activeDepartments.length > 4) {
-      appendLegendItem(`+${activeDepartments.length - 4} more`, "#9dabb9");
+    if (activeGroups.length > 4) {
+      appendLegendItem(`+${activeGroups.length - 4} more`, "#9dabb9");
     }
   } else {
-    appendLegendItem("Match", colorFor({ department_ids: [] }));
+    appendLegendItem(
+      state.filtersActive ? "Match" : "Publication",
+      colorFor({ department_ids: [], faculty_ids: [] }),
+    );
   }
   if (state.filtersActive && state.displayMode === "highlight") {
     appendLegendItem("Context", "#748696", "legend-dot-context");
@@ -470,9 +507,22 @@ function renderSelectedAuthors() {
   }
 }
 
+function refreshFacultyColors() {
+  state.facultyColors.clear();
+  state.faculty
+    .filter((person) => state.activeFaculty.has(person.person_id))
+    .forEach((person, index) => {
+      state.facultyColors.set(
+        person.person_id,
+        DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length],
+      );
+    });
+}
+
 function addAuthor(personId) {
   if (!state.facultyById.has(personId)) return;
   state.activeFaculty.add(personId);
+  refreshFacultyColors();
   authorSearch.value = "";
   hideSuggestions();
   renderSelectedAuthors();
@@ -560,11 +610,7 @@ function showDetails(point) {
 }
 
 function resetView() {
-  state.scale = 1;
-  state.offsetX = 0;
-  state.offsetY = 0;
-  tooltip.hidden = true;
-  scheduleDraw();
+  fitPoints(state.points);
 }
 
 function fitPoints(points) {
@@ -582,7 +628,7 @@ function fitPoints(points) {
   }
   const rangeX = Math.max(maxX - minX, 0.04);
   const rangeY = Math.max(maxY - minY, 0.04);
-  const padding = 72;
+  const padding = 28;
   const unitScale = baseScale(bounds.width, bounds.height);
   state.scale = Math.min(
     25,
@@ -743,6 +789,7 @@ selectedAuthors.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-person-id]");
   if (!button) return;
   state.activeFaculty.delete(button.dataset.personId);
+  refreshFacultyColors();
   renderSelectedAuthors();
   applyFilters();
 });
@@ -762,11 +809,21 @@ document.querySelectorAll('input[name="display-mode"]').forEach((input) => {
   });
 });
 
+document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) return;
+    state.colorMode = input.value;
+    renderLegend();
+    scheduleDraw();
+  });
+});
+
 clearFiltersButton.addEventListener("click", () => {
   titleSearch.value = "";
   authorSearch.value = "";
   state.activeDepartments.clear();
   state.activeFaculty.clear();
+  refreshFacultyColors();
   departmentOptions
     .querySelectorAll('input[type="checkbox"]')
     .forEach((input) => {
@@ -840,6 +897,7 @@ async function loadMap() {
     }
     applyFilters();
     resizeCanvas();
+    resetView();
   } catch (error) {
     console.error(error);
     statusElement.textContent =
