@@ -24,8 +24,10 @@ const state = {
   screenPoints: [],
   departments: [],
   faculty: [],
+  layouts: [],
   departmentById: new Map(),
   facultyById: new Map(),
+  layoutById: new Map(),
   departmentColors: new Map(),
   facultyColors: new Map(),
   titleColors: new Map(),
@@ -35,6 +37,7 @@ const state = {
   activeFaculty: new Set(),
   colorMode: "department",
   displayMode: "highlight",
+  layoutId: "",
   filtersActive: false,
   selectedWorkId: "",
   scale: 1,
@@ -66,6 +69,8 @@ const departmentSuggestions = document.querySelector(
   "#department-suggestions",
 );
 const selectedDepartments = document.querySelector("#selected-departments");
+const layoutOptions = document.querySelector("#layout-options");
+const layoutNote = document.querySelector("#layout-note");
 const clearFiltersButton = document.querySelector("#clear-filters");
 const zoomResultsButton = document.querySelector("#zoom-results");
 const resetViewButton = document.querySelector("#reset-view");
@@ -116,16 +121,77 @@ function departmentNames(point) {
 }
 
 function preparePoint(point) {
+  const coordinates = new Map(
+    state.layouts.map((layout) => [
+      layout.layout_id,
+      {
+        x: Number(point[layout.x_field]),
+        y: Number(point[layout.y_field]),
+      },
+    ]),
+  );
+  const activeCoordinates = coordinates.get(state.layoutId);
   return {
     ...point,
-    x: Number(point.x),
-    y: Number(point.y),
+    x: activeCoordinates?.x,
+    y: activeCoordinates?.y,
     department_ids: Array.isArray(point.department_ids)
       ? point.department_ids
       : [],
     faculty_ids: Array.isArray(point.faculty_ids) ? point.faculty_ids : [],
+    _coordinates: coordinates,
     _title: normalizedText(point.title),
   };
+}
+
+function hasEveryLayout(point) {
+  return state.layouts.every((layout) => {
+    const coordinates = point._coordinates.get(layout.layout_id);
+    return Number.isFinite(coordinates?.x) && Number.isFinite(coordinates?.y);
+  });
+}
+
+function layoutDescription(layout) {
+  return layout ? `${layout.method}: ${layout.description}` : "";
+}
+
+function populateLayouts() {
+  layoutOptions.replaceChildren();
+  for (const layout of state.layouts) {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "layout-mode";
+    input.value = layout.layout_id;
+    input.checked = layout.layout_id === state.layoutId;
+    input.setAttribute("aria-describedby", "layout-note");
+    const text = document.createElement("span");
+    text.textContent = layout.label;
+    label.append(input, text);
+    layoutOptions.append(label);
+  }
+  const layout = state.layoutById.get(state.layoutId);
+  layoutNote.textContent = layoutDescription(layout);
+}
+
+function activateLayout(layoutId, { fit = true } = {}) {
+  const layout = state.layoutById.get(layoutId);
+  if (!layout || layoutId === state.layoutId) return;
+  state.layoutId = layoutId;
+  for (const point of state.points) {
+    const coordinates = point._coordinates.get(layoutId);
+    point.x = coordinates.x;
+    point.y = coordinates.y;
+  }
+  layoutOptions
+    .querySelectorAll('input[name="layout-mode"]')
+    .forEach((input) => {
+      input.checked = input.value === layoutId;
+    });
+  layoutNote.textContent = layoutDescription(layout);
+  tooltip.hidden = true;
+  if (fit) resetView();
+  else scheduleDraw();
 }
 
 function resizeCanvas() {
@@ -1034,6 +1100,11 @@ selectedTitles.addEventListener("click", (event) => {
   applyFilters();
 });
 
+layoutOptions.addEventListener("change", (event) => {
+  if (!event.target.matches('input[name="layout-mode"]')) return;
+  activateLayout(event.target.value);
+});
+
 document.querySelectorAll('input[name="display-mode"]').forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked) return;
@@ -1117,8 +1188,9 @@ async function loadMap() {
     }
     const artifact = await artifactResponse.json();
     if (
-      artifact.schema_version !== 3 ||
+      artifact.schema_version !== 4 ||
       !Array.isArray(artifact.points) ||
+      !Array.isArray(artifact.layouts) ||
       !Array.isArray(artifact.catalogs?.departments) ||
       !Array.isArray(artifact.catalogs?.faculty)
     ) {
@@ -1126,6 +1198,27 @@ async function loadMap() {
     }
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
+    state.layouts = artifact.layouts.filter(
+      (layout) =>
+        layout &&
+        typeof layout.layout_id === "string" &&
+        typeof layout.label === "string" &&
+        typeof layout.method === "string" &&
+        typeof layout.description === "string" &&
+        typeof layout.x_field === "string" &&
+        typeof layout.y_field === "string",
+    );
+    state.layoutById = new Map(
+      state.layouts.map((layout) => [layout.layout_id, layout]),
+    );
+    state.layoutId = artifact.default_layout_id;
+    if (
+      state.layouts.length < 2 ||
+      state.layoutById.size !== state.layouts.length ||
+      !state.layoutById.has(state.layoutId)
+    ) {
+      throw new Error("The publication artifact has invalid layout metadata");
+    }
     state.departmentById = new Map(
       state.departments.map((item) => [item.department_id, item]),
     );
@@ -1134,7 +1227,11 @@ async function loadMap() {
     );
     state.points = artifact.points
       .map(preparePoint)
-      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+      .filter(hasEveryLayout);
+    if (state.points.length !== artifact.points.length) {
+      throw new Error("The publication artifact has incomplete layout coordinates");
+    }
+    populateLayouts();
     initializeFacultyColors();
     initializeDepartmentColors();
     renderSelectedTitles();

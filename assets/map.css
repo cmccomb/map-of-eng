@@ -184,6 +184,7 @@ h1 {
 }
 
 .field,
+.layout-fieldset,
 .color-fieldset,
 .mode-fieldset {
   display: block;
@@ -194,7 +195,8 @@ h1 {
 
 .title-field + .author-field,
 .author-field + .department-field,
-.department-field + .color-fieldset,
+.department-field + .layout-fieldset,
+.layout-fieldset + .color-fieldset,
 .color-fieldset + .mode-fieldset {
   margin-top: 1.15rem;
   padding-top: 1.15rem;
@@ -202,6 +204,7 @@ h1 {
 }
 
 .field > span,
+.layout-fieldset legend,
 .color-fieldset legend,
 .mode-fieldset legend {
   display: block;
@@ -340,6 +343,11 @@ input[type="search"]:focus {
 }
 
 .color-note {
+  margin: 0.5rem 0 0;
+}
+
+.layout-note {
+  min-height: 2.85em;
   margin: 0.5rem 0 0;
 }
 
