@@ -78,6 +78,7 @@ test("site build pins, validates, and stages the map artifact locally", async (t
     path.join(outputDirectory, "index.html"),
     "utf8",
   );
+  assert.match(deployedHtml, /assets\/theme\.js\?v=fedcba987654/);
   assert.match(deployedHtml, /assets\/map\.js\?v=fedcba987654/);
 });
 

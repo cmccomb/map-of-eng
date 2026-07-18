@@ -1,8 +1,27 @@
 "use strict";
 
 (() => {
-  const BACKGROUND_RGB = [7 / 255, 16 / 255, 25 / 255];
   const MIN_CONTRAST = 3.2;
+  const THEMES = Object.freeze({
+    dark: Object.freeze({
+      backgroundRgb: [7 / 255, 16 / 255, 25 / 255],
+      lightnesses: [0.62, 0.67, 0.72, 0.77, 0.82, 0.87],
+    }),
+    light: Object.freeze({
+      backgroundRgb: [237 / 255, 242 / 255, 244 / 255],
+      lightnesses: [0.34, 0.39, 0.44, 0.49, 0.54, 0.59],
+    }),
+  });
+  const SEQUENTIAL_STOPS = Object.freeze({
+    dark: Object.freeze({
+      year: Object.freeze(["#b968d5", "#43c9b7", "#f0d05d"]),
+      citations: Object.freeze(["#68a4d8", "#42c3a0", "#f2b956"]),
+    }),
+    light: Object.freeze({
+      year: Object.freeze(["#722287", "#007269", "#785700"]),
+      citations: Object.freeze(["#275f90", "#007159", "#7d5000"]),
+    }),
+  });
 
   function linearToSrgb(value) {
     return value <= 0.0031308
@@ -65,13 +84,29 @@
 
   function rgbToHex(rgb) {
     return `#${rgb
+      .map((value) => Math.min(1, Math.max(0, value)))
       .map((value) => Math.round(value * 255).toString(16).padStart(2, "0"))
       .join("")}`;
   }
 
-  function buildCandidates() {
+  function hexToOklab(hex) {
+    const channels = hex
+      .slice(1)
+      .match(/.{2}/g)
+      .map((channel) => Number.parseInt(channel, 16) / 255)
+      .map(srgbToLinear);
+    return linearRgbToOklab(channels);
+  }
+
+  function interpolateOklab(left, right, amount) {
+    const lab = left.map(
+      (channel, index) => channel + (right[index] - channel) * amount,
+    );
+    return rgbToHex(oklabToLinearRgb(lab).map(linearToSrgb));
+  }
+
+  function buildCandidates({ backgroundRgb, lightnesses }) {
     const candidatesByHex = new Map();
-    const lightnesses = [0.62, 0.67, 0.72, 0.77, 0.82, 0.87];
     const chromas = [0.07, 0.1, 0.13, 0.16, 0.19, 0.22];
 
     for (const lightness of lightnesses) {
@@ -86,7 +121,7 @@
           const linearRgb = oklabToLinearRgb(lab);
           if (linearRgb.some((value) => value < 0 || value > 1)) continue;
           const rgb = linearRgb.map(linearToSrgb);
-          if (contrastRatio(rgb, BACKGROUND_RGB) < MIN_CONTRAST) continue;
+          if (contrastRatio(rgb, backgroundRgb) < MIN_CONTRAST) continue;
           const hex = rgbToHex(rgb);
           if (!candidatesByHex.has(hex)) {
             candidatesByHex.set(hex, { hex, lab });
@@ -97,23 +132,32 @@
     return [...candidatesByHex.values()];
   }
 
-  const CANDIDATES = buildCandidates();
-  const BACKGROUND_LAB = linearRgbToOklab(
-    BACKGROUND_RGB.map(srgbToLinear),
+  const themeData = new Map(
+    Object.entries(THEMES).map(([theme, configuration]) => [
+      theme,
+      {
+        candidates: buildCandidates(configuration),
+        backgroundLab: linearRgbToOklab(
+          configuration.backgroundRgb.map(srgbToLinear),
+        ),
+        paletteCache: new Map([[0, Object.freeze([])]]),
+      },
+    ]),
   );
-  const paletteCache = new Map([[0, Object.freeze([])]]);
 
-  function generatePerceptualPalette(requestedCount) {
+  function generatePerceptualPalette(requestedCount, requestedTheme = "dark") {
     const count = Math.max(0, Math.floor(Number(requestedCount) || 0));
+    const theme = themeData.has(requestedTheme) ? requestedTheme : "dark";
+    const { candidates, backgroundLab, paletteCache } = themeData.get(theme);
     if (paletteCache.has(count)) return [...paletteCache.get(count)];
-    if (count > CANDIDATES.length) {
+    if (count > candidates.length) {
       throw new RangeError(
-        `Cannot generate ${count} distinct colors from ${CANDIDATES.length} displayable candidates`,
+        `Cannot generate ${count} distinct ${theme} colors from ${candidates.length} displayable candidates`,
       );
     }
 
-    const minimumDistances = CANDIDATES.map((candidate) =>
-      squaredDistance(candidate.lab, BACKGROUND_LAB),
+    const minimumDistances = candidates.map((candidate) =>
+      squaredDistance(candidate.lab, backgroundLab),
     );
     const palette = [];
     for (let selection = 0; selection < count; selection += 1) {
@@ -123,14 +167,14 @@
           nextIndex = index;
         }
       }
-      const chosen = CANDIDATES[nextIndex];
+      const chosen = candidates[nextIndex];
       palette.push(chosen.hex);
       minimumDistances[nextIndex] = -1;
-      for (let index = 0; index < CANDIDATES.length; index += 1) {
+      for (let index = 0; index < candidates.length; index += 1) {
         if (minimumDistances[index] < 0) continue;
         minimumDistances[index] = Math.min(
           minimumDistances[index],
-          squaredDistance(CANDIDATES[index].lab, chosen.lab),
+          squaredDistance(candidates[index].lab, chosen.lab),
         );
       }
     }
@@ -139,7 +183,32 @@
     return palette;
   }
 
+  function generateSequentialPalette(
+    requestedCount,
+    requestedTheme = "dark",
+    requestedMode = "year",
+  ) {
+    const count = Math.max(0, Math.floor(Number(requestedCount) || 0));
+    if (!count) return [];
+    const theme = SEQUENTIAL_STOPS[requestedTheme] ? requestedTheme : "dark";
+    const mode = SEQUENTIAL_STOPS[theme][requestedMode]
+      ? requestedMode
+      : "year";
+    const stops = SEQUENTIAL_STOPS[theme][mode].map(hexToOklab);
+    if (count === 1) return [interpolateOklab(stops[0], stops.at(-1), 0.5)];
+    return Array.from({ length: count }, (_, index) => {
+      const position = (index / (count - 1)) * (stops.length - 1);
+      const leftIndex = Math.min(stops.length - 2, Math.floor(position));
+      return interpolateOklab(
+        stops[leftIndex],
+        stops[leftIndex + 1],
+        position - leftIndex,
+      );
+    });
+  }
+
   globalThis.ResearchMapColors = Object.freeze({
     generatePerceptualPalette,
+    generateSequentialPalette,
   });
 })();

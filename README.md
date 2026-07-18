@@ -19,8 +19,12 @@ shipped as coordinates in the artifact. Visitors can build removable filter
 pills for publication-title terms, departments, and faculty authors; choose
 between highlighting matches in context and showing matches alone; color
 comparisons by title term, department, or faculty author; and zoom to the
-resulting subset. Point size adapts to result density so full-corpus structure
-and sparse searches both remain legible. Search dimensions combine with AND;
+resulting subset. Publications can also be colored by year or citation count.
+The year scale is linear across the central 98% of dated works; the citation
+scale is logarithmic through the 99th percentile. Explicit `≤` and `≥` legend
+endpoints retain outliers without letting them compress the rest of the corpus
+into one color. Point size adapts to result density so full-corpus structure and
+sparse searches both remain legible. Search dimensions combine with AND;
 multiple values within a dimension combine with OR.
 
 Faculty and department color modes assign every cataloged entity a unique,
@@ -31,6 +35,10 @@ categorical palette. Searchable color keys list the faculty or departments
 represented in the current matches and can also add or remove filters. For a
 work with multiple connections, an actively selected entity takes color
 priority; otherwise the first cataloged connection is used.
+
+Year and citation modes use separate ordered, theme-aware color ramps generated
+in OKLab. Their legends retain the full-corpus domain while filters are active,
+so a color keeps the same meaning as visitors narrow the map.
 
 Remote configuration and artifact data pass through a small, independently
 tested parser before reaching the UI. Unsafe links are discarded, structural

@@ -1,7 +1,7 @@
 "use strict";
 
-const UNASSIGNED_FACULTY_COLOR = "#657789";
 const TITLE_COLOR_CAPACITY = 32;
+const SEQUENTIAL_COLOR_STEPS = 48;
 const core = globalThis.ResearchMapCore;
 
 const state = {
@@ -19,6 +19,11 @@ const state = {
   facultyColors: new Map(),
   titleColors: new Map(),
   titlePalette: [],
+  yearPalette: [],
+  citationPalette: [],
+  yearRange: null,
+  citationMaximum: 0,
+  citationMaximumClipped: false,
   activeTitleTerms: new Map(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
@@ -46,6 +51,41 @@ const state = {
 
 const canvas = document.querySelector("#research-map");
 const context = canvas.getContext("2d", { alpha: false });
+
+function resolvedTheme() {
+  return document.documentElement.dataset.resolvedTheme === "light"
+    ? "light"
+    : "dark";
+}
+
+function themeColor(property, fallback) {
+  return getComputedStyle(canvas).getPropertyValue(property).trim() || fallback;
+}
+
+function colorAt(palette, amount) {
+  if (!palette.length) return themeColor("--canvas-default", "#79b7cf");
+  const position = Math.min(1, Math.max(0, Number(amount) || 0));
+  return palette[Math.round(position * (palette.length - 1))];
+}
+
+function yearColor(point) {
+  if (!Number.isInteger(point.year) || !state.yearRange) {
+    return themeColor("--canvas-unassigned", "#657789");
+  }
+  const { minimum, maximum } = state.yearRange;
+  const amount =
+    maximum === minimum ? 0.5 : (point.year - minimum) / (maximum - minimum);
+  return colorAt(state.yearPalette, amount);
+}
+
+function citationColor(point) {
+  const citations = Math.max(0, Number(point.citation_count) || 0);
+  const amount = state.citationMaximum
+    ? Math.log1p(citations) / Math.log1p(state.citationMaximum)
+    : 0.5;
+  return colorAt(state.citationPalette, amount);
+}
+
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
@@ -208,7 +248,7 @@ function mapToScreen(point, width, height) {
 function drawGrid(width, height) {
   const spacing = 48;
   context.save();
-  context.strokeStyle = "#ffffff08";
+  context.strokeStyle = themeColor("--canvas-grid", "#ffffff08");
   context.lineWidth = 1;
   context.beginPath();
   for (let x = 0.5; x < width; x += spacing) {
@@ -243,6 +283,8 @@ function colorFor(point) {
       if (point._title?.includes(query)) return state.titleColors.get(query);
     }
   }
+  if (state.colorMode === "year") return yearColor(point);
+  if (state.colorMode === "citations") return citationColor(point);
   if (state.colorMode === "faculty") {
     const personId = core.preferredId(
       point.faculty_ids,
@@ -250,7 +292,7 @@ function colorFor(point) {
       state.facultyColors,
     );
     if (personId) return state.facultyColors.get(personId);
-    return UNASSIGNED_FACULTY_COLOR;
+    return themeColor("--canvas-unassigned", "#657789");
   }
   if (state.colorMode === "department") {
     const departmentId = core.preferredId(
@@ -265,9 +307,9 @@ function colorFor(point) {
     state.activeFaculty.size ||
     state.activeDepartments.size
   ) {
-    return "#73c5df";
+    return themeColor("--canvas-highlight", "#73c5df");
   }
-  return "#79b7cf";
+  return themeColor("--canvas-default", "#79b7cf");
 }
 
 function drawMatched(screenPoints) {
@@ -287,12 +329,14 @@ function drawMatched(screenPoints) {
     else if (matchTotal > 1000) radius = 1.25;
     else radius = 1.7;
   }
+  const quantitativeMode = ["year", "citations"].includes(state.colorMode);
+  const alpha = state.filtersActive ? 0.9 : quantitativeMode ? 0.68 : 0.54;
   for (const [color, group] of groups) {
-    drawBatch(group, radius, color, state.filtersActive ? 0.9 : 0.54);
+    drawBatch(group, radius, color, alpha);
   }
   if (state.filtersActive && state.matchedPoints.length <= 1500) {
     context.save();
-    context.strokeStyle = "#f4fbff";
+    context.strokeStyle = themeColor("--canvas-selected", "#f4fbff");
     context.globalAlpha = 0.58;
     context.lineWidth = 0.65;
     context.beginPath();
@@ -327,7 +371,7 @@ function drawSelected(screenPoints) {
   );
   if (!selected) return;
   context.save();
-  context.strokeStyle = "#ffffff";
+  context.strokeStyle = themeColor("--canvas-selected", "#ffffff");
   context.globalAlpha = 0.95;
   context.lineWidth = 1.5;
   context.beginPath();
@@ -339,7 +383,7 @@ function drawSelected(screenPoints) {
 function draw() {
   state.framePending = false;
   const bounds = canvas.getBoundingClientRect();
-  context.fillStyle = "#071019";
+  context.fillStyle = themeColor("--canvas", "#071019");
   context.fillRect(0, 0, bounds.width, bounds.height);
   drawGrid(bounds.width, bounds.height);
 
@@ -361,7 +405,12 @@ function draw() {
 
   const contextPoints = state.screenPoints.filter((point) => !point.matched);
   const matchedPoints = state.screenPoints.filter((point) => point.matched);
-  drawBatch(contextPoints, 0.55, "#748696", 0.12);
+  drawBatch(
+    contextPoints,
+    0.55,
+    themeColor("--canvas-context", "#748696"),
+    0.12,
+  );
   drawMatched(matchedPoints);
   drawSelected(state.screenPoints);
 }
@@ -422,6 +471,99 @@ function appendLegendItem(label, color, className = "legend-dot-match") {
   mapLegend.append(item);
 }
 
+function compactNumber(value) {
+  return new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function appendContinuousLegend({ title, labels, palette, accessibleLabel }) {
+  const item = document.createElement("span");
+  item.className = "continuous-legend";
+  item.setAttribute("role", "img");
+  item.setAttribute("aria-label", accessibleLabel);
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const gradient = document.createElement("i");
+  gradient.className = "continuous-gradient";
+  gradient.setAttribute("aria-hidden", "true");
+  gradient.style.backgroundImage = `linear-gradient(90deg, ${palette
+    .map(
+      (color, index) =>
+        `${color} ${((index / Math.max(1, palette.length - 1)) * 100).toFixed(2)}%`,
+    )
+    .join(", ")})`;
+  const ticks = document.createElement("span");
+  ticks.className = "continuous-ticks";
+  for (const label of labels) {
+    const tick = document.createElement("span");
+    tick.textContent = label;
+    ticks.append(tick);
+  }
+  item.append(heading, gradient, ticks);
+  mapLegend.append(item);
+}
+
+function renderYearLegend() {
+  if (!state.yearRange) {
+    appendLegendItem(
+      "Year unavailable",
+      themeColor("--canvas-unassigned", "#657789"),
+    );
+    return;
+  }
+  const { minimum, maximum } = state.yearRange;
+  const midpoint = Math.round((minimum + maximum) / 2);
+  const minimumLabel = state.yearRange.clippedMinimum
+    ? `≤${minimum}`
+    : String(minimum);
+  const maximumLabel = state.yearRange.clippedMaximum
+    ? `≥${maximum}`
+    : String(maximum);
+  appendContinuousLegend({
+    title: "Publication year",
+    labels:
+      minimum === maximum
+        ? [String(minimum)]
+        : [minimumLabel, String(midpoint), maximumLabel],
+    palette: state.yearPalette,
+    accessibleLabel:
+      minimum === maximum
+        ? `All dated publications are from ${minimum}`
+        : `Publication year color scale from ${minimum}${
+            state.yearRange.clippedMinimum ? " and earlier" : ""
+          } to ${maximum}${
+            state.yearRange.clippedMaximum ? " and later" : ""
+          }`,
+  });
+  if (state.matchedPoints.some((point) => !Number.isInteger(point.year))) {
+    appendLegendItem(
+      "Year unavailable",
+      themeColor("--canvas-unassigned", "#657789"),
+    );
+  }
+}
+
+function renderCitationLegend() {
+  const maximum = state.citationMaximum;
+  const midpoint = Math.round(Math.expm1(Math.log1p(maximum) / 2));
+  const maximumLabel = state.citationMaximumClipped
+    ? `≥${compactNumber(maximum)}`
+    : compactNumber(maximum);
+  appendContinuousLegend({
+    title: "Citations · log scale",
+    labels: maximum
+      ? ["0", compactNumber(midpoint), maximumLabel]
+      : ["0"],
+    palette: state.citationPalette,
+    accessibleLabel: `Citation count color scale from 0 to ${maximum.toLocaleString()}${
+      state.citationMaximumClipped ? " and higher" : ""
+    }, logarithmic when nonzero`,
+  });
+}
+
 function colorKeyItems(mode = state.colorMode) {
   const isFaculty = mode === "faculty";
   const idField = isFaculty ? "person_id" : "department_id";
@@ -475,14 +617,21 @@ function appendColorKeyButton(items, mode) {
 
 function renderLegend() {
   mapLegend.replaceChildren();
-  if (state.colorMode === "faculty") {
+  if (state.colorMode === "year") {
+    renderYearLegend();
+  } else if (state.colorMode === "citations") {
+    renderCitationLegend();
+  } else if (state.colorMode === "faculty") {
     const items = colorKeyItems("faculty");
     const selectedItems = items.filter((item) => item.selected);
     for (const item of selectedItems.slice(0, 3)) {
       appendLegendItem(item.label, item.color);
     }
     if (selectedItems.length > 3) {
-      appendLegendItem(`+${selectedItems.length - 3} selected`, "#9dabb9");
+      appendLegendItem(
+        `+${selectedItems.length - 3} selected`,
+        themeColor("--quiet", "#9dabb9"),
+      );
     }
     const hasUnmappedMatches = state.matchedPoints.some(
       (point) =>
@@ -493,12 +642,21 @@ function renderLegend() {
     if (items.length) {
       appendColorKeyButton(items, "faculty");
       if (hasUnmappedMatches) {
-        appendLegendItem("No mapped faculty", UNASSIGNED_FACULTY_COLOR);
+        appendLegendItem(
+          "No mapped faculty",
+          themeColor("--canvas-unassigned", "#657789"),
+        );
       }
     } else if (state.matchedPoints.length && hasUnmappedMatches) {
-      appendLegendItem("No mapped faculty", UNASSIGNED_FACULTY_COLOR);
+      appendLegendItem(
+        "No mapped faculty",
+        themeColor("--canvas-unassigned", "#657789"),
+      );
     } else {
-      appendLegendItem("No faculty matches", UNASSIGNED_FACULTY_COLOR);
+      appendLegendItem(
+        "No faculty matches",
+        themeColor("--canvas-unassigned", "#657789"),
+      );
     }
   } else if (state.colorMode === "title") {
     const activeTerms = [...state.activeTitleTerms].map(([query, label]) => ({
@@ -510,7 +668,10 @@ function renderLegend() {
         appendLegendItem(term.label, term.color);
       }
       if (activeTerms.length > 4) {
-        appendLegendItem(`+${activeTerms.length - 4} more`, "#9dabb9");
+        appendLegendItem(
+          `+${activeTerms.length - 4} more`,
+          themeColor("--quiet", "#9dabb9"),
+        );
       }
     } else {
       appendLegendItem(
@@ -518,7 +679,7 @@ function renderLegend() {
         colorFor({ _title: "", department_ids: [], faculty_ids: [] }),
       );
     }
-  } else {
+  } else if (state.colorMode === "department") {
     const items = colorKeyItems("department");
     const selectedItems = items.filter((item) => item.selected);
     if (selectedItems.length) {
@@ -526,7 +687,10 @@ function renderLegend() {
         appendLegendItem(item.label, item.color);
       }
       if (selectedItems.length > 4) {
-        appendLegendItem(`+${selectedItems.length - 4} more`, "#9dabb9");
+        appendLegendItem(
+          `+${selectedItems.length - 4} more`,
+          themeColor("--quiet", "#9dabb9"),
+        );
       }
     }
     if (items.length) {
@@ -534,12 +698,16 @@ function renderLegend() {
     } else {
       appendLegendItem(
         "No department matches",
-        UNASSIGNED_FACULTY_COLOR,
+        themeColor("--canvas-unassigned", "#657789"),
       );
     }
   }
   if (state.filtersActive && state.displayMode === "highlight") {
-    appendLegendItem("Context", "#748696", "legend-dot-context");
+    appendLegendItem(
+      "Context",
+      themeColor("--canvas-context", "#748696"),
+      "legend-dot-context",
+    );
   }
 }
 
@@ -641,10 +809,59 @@ function applyFilters() {
 function initializeDepartmentColors() {
   const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
   if (!generator) throw new Error("Department color generator is unavailable");
-  const palette = generator(state.departments.length);
+  const palette = generator(state.departments.length, resolvedTheme());
   state.departments.forEach((department, index) => {
     state.departmentColors.set(department.department_id, palette[index]);
   });
+}
+
+function initializeSequentialColors() {
+  const generator = globalThis.ResearchMapColors?.generateSequentialPalette;
+  if (!generator) throw new Error("Sequential color generator is unavailable");
+  state.yearPalette = generator(
+    SEQUENTIAL_COLOR_STEPS,
+    resolvedTheme(),
+    "year",
+  );
+  state.citationPalette = generator(
+    SEQUENTIAL_COLOR_STEPS,
+    resolvedTheme(),
+    "citations",
+  );
+  const years = state.points
+    .map((point) => point.year)
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right);
+  if (years.length) {
+    const actualMinimum = years[0];
+    const actualMaximum = years.at(-1);
+    const useRobustRange = years.length >= 100;
+    const minimum = useRobustRange
+      ? years[Math.floor((years.length - 1) * 0.01)]
+      : actualMinimum;
+    const maximum = useRobustRange
+      ? years[Math.floor((years.length - 1) * 0.99)]
+      : actualMaximum;
+    state.yearRange = {
+      minimum,
+      maximum,
+      clippedMinimum: actualMinimum < minimum,
+      clippedMaximum: actualMaximum > maximum,
+    };
+  } else {
+    state.yearRange = null;
+  }
+  const citations = state.points
+    .map((point) => Math.max(0, Number(point.citation_count) || 0))
+    .sort((left, right) => left - right);
+  const actualCitationMaximum = citations.at(-1) || 0;
+  const robustCitationMaximum =
+    citations.length >= 100
+      ? citations[Math.floor((citations.length - 1) * 0.99)]
+      : actualCitationMaximum;
+  state.citationMaximum = robustCitationMaximum || actualCitationMaximum;
+  state.citationMaximumClipped =
+    actualCitationMaximum > state.citationMaximum;
 }
 
 function createMultiSelect({
@@ -835,10 +1052,27 @@ function createMultiSelect({
 function initializeFacultyColors() {
   const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
   if (!generator) throw new Error("Faculty color generator is unavailable");
-  const palette = generator(state.faculty.length);
+  const palette = generator(state.faculty.length, resolvedTheme());
   state.facultyColors = new Map(
     state.faculty.map((person, index) => [person.person_id, palette[index]]),
   );
+}
+
+function refreshThemeColors() {
+  if (state.departments.length || state.faculty.length) {
+    state.departmentColors = new Map();
+    state.facultyColors = new Map();
+    state.titleColors = new Map();
+    state.titlePalette = [];
+    initializeFacultyColors();
+    initializeDepartmentColors();
+    initializeSequentialColors();
+    for (const query of state.activeTitleTerms.keys()) ensureTitleColor(query);
+    renderLegend();
+    if (colorKeyDialog.open) renderColorKey();
+  }
+  tooltip.hidden = true;
+  scheduleDraw();
 }
 
 function ensureTitleColor(query) {
@@ -851,7 +1085,7 @@ function ensureTitleColor(query) {
       TITLE_COLOR_CAPACITY,
       state.titlePalette.length * 2,
     );
-    state.titlePalette = generator(nextCapacity);
+    state.titlePalette = generator(nextCapacity, resolvedTheme());
   }
   state.titleColors.set(query, state.titlePalette[colorIndex]);
 }
@@ -1214,6 +1448,7 @@ closeDetail.addEventListener("click", () => {
   canvas.focus();
   scheduleDraw();
 });
+window.addEventListener("research-map-theme-change", refreshThemeColors);
 if ("ResizeObserver" in window) {
   const canvasResizeObserver = new ResizeObserver(resizeCanvas);
   canvasResizeObserver.observe(canvas);
@@ -1347,6 +1582,11 @@ async function loadMap() {
     state.facultyColors = new Map();
     state.titleColors = new Map();
     state.titlePalette = [];
+    state.yearPalette = [];
+    state.citationPalette = [];
+    state.yearRange = null;
+    state.citationMaximum = 0;
+    state.citationMaximumClipped = false;
     state.selectedWorkId = "";
     detailPanel.hidden = true;
     if (artifact.warnings.length) console.warn(...artifact.warnings);
@@ -1354,6 +1594,7 @@ async function loadMap() {
     populateLayouts();
     initializeFacultyColors();
     initializeDepartmentColors();
+    initializeSequentialColors();
     resetFilters();
     const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
     state.sourceLabel = updated

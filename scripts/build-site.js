@@ -74,6 +74,7 @@ function stampAssetUrls(html, version) {
   let stamped = html;
   for (const asset of [
     "assets/map.css",
+    "assets/theme.js",
     "assets/colors.js",
     "assets/map-core.js",
     "assets/map.js",

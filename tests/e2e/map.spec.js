@@ -58,6 +58,89 @@ test("loads cleanly with useful defaults and a complete department key", async (
   expect(consoleErrors).toEqual([]);
 });
 
+test("uses the map as an edge-to-edge backdrop for floating controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openMap(page);
+
+  const layout = await page.evaluate(() => {
+    const bounds = (selector) => {
+      const rectangle = document.querySelector(selector).getBoundingClientRect();
+      return {
+        top: rectangle.top,
+        right: rectangle.right,
+        bottom: rectangle.bottom,
+        left: rectangle.left,
+        width: rectangle.width,
+        height: rectangle.height,
+      };
+    };
+    const mapColumn = document.querySelector(".map-column");
+    return {
+      canvas: bounds("#research-map"),
+      filters: bounds(".filter-panel"),
+      toolbar: bounds(".map-toolbar"),
+      mapBorderWidth: getComputedStyle(mapColumn).borderTopWidth,
+      bodyOverflow: getComputedStyle(document.body).overflow,
+    };
+  });
+
+  expect(layout.canvas).toMatchObject({
+    top: 0,
+    left: 0,
+    width: 1440,
+    height: 900,
+  });
+  expect(layout.mapBorderWidth).toBe("0px");
+  expect(layout.bodyOverflow).toBe("hidden");
+  expect(layout.filters.left).toBeGreaterThan(layout.canvas.left);
+  expect(layout.filters.bottom).toBeLessThan(layout.canvas.bottom);
+  expect(layout.toolbar.top).toBeGreaterThan(layout.canvas.top);
+  expect(layout.toolbar.right).toBeLessThan(layout.canvas.right);
+});
+
+test("appearance control persists light, follows system, and redraws dark", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openMap(page);
+  const root = page.locator("html");
+  const canvas = page.locator("#research-map");
+
+  await expect(root).toHaveAttribute("data-theme", "system");
+  await expect(root).toHaveAttribute("data-resolved-theme", "dark");
+  await expect(page.getByLabel("System", { exact: true })).toBeChecked();
+  const systemDarkImage = await canvas.screenshot();
+
+  await page.getByText("Light", { exact: true }).click();
+  await expect(root).toHaveAttribute("data-theme", "light");
+  await expect(root).toHaveAttribute("data-resolved-theme", "light");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("cmu-research-map-theme")))
+    .toBe("light");
+  const lightImage = await canvas.screenshot();
+  expect(lightImage.equals(systemDarkImage)).toBe(false);
+
+  await page.reload();
+  await expect(page.locator(".filter-panel")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.getByLabel("Light", { exact: true })).toBeChecked();
+  await expect(root).toHaveAttribute("data-resolved-theme", "light");
+
+  await page.getByText("System", { exact: true }).click();
+  await expect(root).toHaveAttribute("data-theme", "system");
+  await expect(root).toHaveAttribute("data-resolved-theme", "dark");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(root).toHaveAttribute("data-resolved-theme", "light");
+
+  await page.getByText("Dark", { exact: true }).click();
+  await expect(root).toHaveAttribute("data-theme", "dark");
+  await expect(root).toHaveAttribute("data-resolved-theme", "dark");
+});
+
 test("title pills are normalized, deduplicated, ORed, and removable", async ({
   page,
 }) => {
@@ -148,6 +231,89 @@ test("department and faculty modes recolor the canvas and expose every represent
   await expect(page.locator("#selected-authors")).toContainText("Dan Diaz");
   await expect(page.locator("#match-count")).toHaveText("1 of 8");
   await expect(page.locator("#map-legend")).toContainText("Dan Diaz");
+});
+
+test("year and citation modes use stable ordered scales and recolor the map", async ({
+  page,
+}) => {
+  await openMap(page);
+  const canvas = page.locator("#research-map");
+  const departmentImage = await canvas.screenshot();
+
+  await page
+    .locator(".color-control")
+    .getByText("Year", { exact: true })
+    .click();
+  await expect(page.getByLabel("Year", { exact: true })).toBeChecked();
+  const yearLegend = page.locator(".continuous-legend");
+  await expect(yearLegend).toContainText("Publication year");
+  await expect(yearLegend).toContainText("2018");
+  await expect(yearLegend).toContainText("2025");
+  await expect(yearLegend).toHaveAttribute(
+    "aria-label",
+    "Publication year color scale from 2018 to 2025",
+  );
+  const yearImage = await canvas.screenshot();
+  expect(yearImage.equals(departmentImage)).toBe(false);
+
+  await chooseComboOption(page, "#author-search", "Alice");
+  await expect(page.locator("#match-count")).toHaveText("3 of 8");
+  await expect(yearLegend).toContainText("2018");
+  await expect(yearLegend).toContainText("2025");
+  await page.locator("#clear-filters").click();
+
+  await page
+    .locator(".color-control")
+    .getByText("Citations", { exact: true })
+    .click();
+  await expect(page.getByLabel("Citations", { exact: true })).toBeChecked();
+  const citationLegend = page.locator(".continuous-legend");
+  await expect(citationLegend).toContainText("Citations · log scale");
+  await expect(citationLegend).toContainText("0");
+  await expect(citationLegend).toContainText("49");
+  await expect(citationLegend).toHaveAttribute(
+    "aria-label",
+    "Citation count color scale from 0 to 49, logarithmic when nonzero",
+  );
+  const citationImage = await canvas.screenshot();
+  expect(citationImage.equals(yearImage)).toBe(false);
+});
+
+test("quantitative colors label robust ranges without hiding outliers", async ({
+  page,
+}) => {
+  const artifact = makeLargeArtifact(200);
+  artifact.points.forEach((point, index) => {
+    point.year = 2000 + (index % 25);
+    point.citation_count = index % 50;
+  });
+  artifact.points[0].year = 1800;
+  artifact.points.at(-1).year = 2099;
+  artifact.points.at(-1).citation_count = 9999;
+  await openMap(page, artifact);
+
+  await page
+    .locator(".color-control")
+    .getByText("Year", { exact: true })
+    .click();
+  const yearLegend = page.locator(".continuous-legend");
+  await expect(yearLegend).toContainText("≤2000");
+  await expect(yearLegend).toContainText("≥2024");
+  await expect(yearLegend).toHaveAttribute(
+    "aria-label",
+    "Publication year color scale from 2000 and earlier to 2024 and later",
+  );
+
+  await page
+    .locator(".color-control")
+    .getByText("Citations", { exact: true })
+    .click();
+  const citationLegend = page.locator(".continuous-legend");
+  await expect(citationLegend).toContainText("≥49");
+  await expect(citationLegend).toHaveAttribute(
+    "aria-label",
+    "Citation count color scale from 0 to 49 and higher, logarithmic when nonzero",
+  );
 });
 
 test("layout changes geometry while preserving filters, color mode, and details", async ({
