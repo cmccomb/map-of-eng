@@ -233,6 +233,89 @@ test("department and faculty modes recolor the canvas and expose every represent
   await expect(page.locator("#map-legend")).toContainText("Dan Diaz");
 });
 
+test("year and citation modes use stable ordered scales and recolor the map", async ({
+  page,
+}) => {
+  await openMap(page);
+  const canvas = page.locator("#research-map");
+  const departmentImage = await canvas.screenshot();
+
+  await page
+    .locator(".color-control")
+    .getByText("Year", { exact: true })
+    .click();
+  await expect(page.getByLabel("Year", { exact: true })).toBeChecked();
+  const yearLegend = page.locator(".continuous-legend");
+  await expect(yearLegend).toContainText("Publication year");
+  await expect(yearLegend).toContainText("2018");
+  await expect(yearLegend).toContainText("2025");
+  await expect(yearLegend).toHaveAttribute(
+    "aria-label",
+    "Publication year color scale from 2018 to 2025",
+  );
+  const yearImage = await canvas.screenshot();
+  expect(yearImage.equals(departmentImage)).toBe(false);
+
+  await chooseComboOption(page, "#author-search", "Alice");
+  await expect(page.locator("#match-count")).toHaveText("3 of 8");
+  await expect(yearLegend).toContainText("2018");
+  await expect(yearLegend).toContainText("2025");
+  await page.locator("#clear-filters").click();
+
+  await page
+    .locator(".color-control")
+    .getByText("Citations", { exact: true })
+    .click();
+  await expect(page.getByLabel("Citations", { exact: true })).toBeChecked();
+  const citationLegend = page.locator(".continuous-legend");
+  await expect(citationLegend).toContainText("Citations · log scale");
+  await expect(citationLegend).toContainText("0");
+  await expect(citationLegend).toContainText("49");
+  await expect(citationLegend).toHaveAttribute(
+    "aria-label",
+    "Citation count color scale from 0 to 49, logarithmic when nonzero",
+  );
+  const citationImage = await canvas.screenshot();
+  expect(citationImage.equals(yearImage)).toBe(false);
+});
+
+test("quantitative colors label robust ranges without hiding outliers", async ({
+  page,
+}) => {
+  const artifact = makeLargeArtifact(200);
+  artifact.points.forEach((point, index) => {
+    point.year = 2000 + (index % 25);
+    point.citation_count = index % 50;
+  });
+  artifact.points[0].year = 1800;
+  artifact.points.at(-1).year = 2099;
+  artifact.points.at(-1).citation_count = 9999;
+  await openMap(page, artifact);
+
+  await page
+    .locator(".color-control")
+    .getByText("Year", { exact: true })
+    .click();
+  const yearLegend = page.locator(".continuous-legend");
+  await expect(yearLegend).toContainText("≤2000");
+  await expect(yearLegend).toContainText("≥2024");
+  await expect(yearLegend).toHaveAttribute(
+    "aria-label",
+    "Publication year color scale from 2000 and earlier to 2024 and later",
+  );
+
+  await page
+    .locator(".color-control")
+    .getByText("Citations", { exact: true })
+    .click();
+  const citationLegend = page.locator(".continuous-legend");
+  await expect(citationLegend).toContainText("≥49");
+  await expect(citationLegend).toHaveAttribute(
+    "aria-label",
+    "Citation count color scale from 0 to 49 and higher, logarithmic when nonzero",
+  );
+});
+
 test("layout changes geometry while preserving filters, color mode, and details", async ({
   page,
 }) => {

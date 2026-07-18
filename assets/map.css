@@ -549,7 +549,15 @@ input[type="search"]:focus {
 }
 
 .color-control {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.color-control label {
+  grid-column: span 2;
+}
+
+.color-control label:nth-child(n + 4) {
+  grid-column: span 3;
 }
 
 .segmented-control label {
@@ -688,6 +696,38 @@ input[type="search"]:focus {
   display: inline-flex;
   gap: 0.35rem;
   align-items: center;
+}
+
+.map-legend > .continuous-legend {
+  display: grid;
+  width: clamp(9rem, 18vw, 13rem);
+  gap: 0.18rem;
+  align-items: stretch;
+}
+
+.continuous-legend strong {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 680;
+  line-height: 1;
+  text-align: left;
+}
+
+.continuous-gradient {
+  display: block;
+  width: 100%;
+  height: 0.48rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.continuous-ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+  font-size: 0.61rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .faculty-legend-button {
@@ -1175,7 +1215,7 @@ footer p {
   }
 
   .map-toolbar {
-    top: 7.15rem;
+    top: 7.95rem;
     left: 0.65rem;
     width: auto;
     min-height: 2.65rem;
@@ -1186,6 +1226,10 @@ footer p {
 
   .map-legend {
     max-width: 10rem;
+  }
+
+  .map-legend > .continuous-legend {
+    width: 9.4rem;
   }
 
   .faculty-legend-card {
