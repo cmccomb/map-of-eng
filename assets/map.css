@@ -126,10 +126,31 @@ h1 {
   color: #ff9caa;
 }
 
+.status.warning {
+  color: #e8c98e;
+}
+
 .dataset-link {
   font-size: 0.84rem;
   font-weight: 680;
   text-decoration: none;
+}
+
+.retry-button {
+  display: block;
+  width: fit-content;
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.4rem;
+  background: #101e2b;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+
+.retry-button:hover {
+  border-color: var(--accent);
 }
 
 .workspace {
@@ -181,6 +202,12 @@ h1 {
   font-size: 0.78rem;
   text-decoration: underline;
   text-underline-offset: 0.22rem;
+}
+
+.text-button:disabled {
+  color: #64727e;
+  cursor: default;
+  text-decoration: none;
 }
 
 .field,
@@ -295,6 +322,12 @@ input[type="search"]:focus {
 
 .suggestions small {
   color: var(--quiet);
+}
+
+.suggestion-empty {
+  padding: 0.65rem;
+  color: var(--quiet);
+  font-size: 0.75rem;
 }
 
 .selected-filters {
@@ -598,7 +631,10 @@ canvas.dragging {
   right: 0.75rem;
   bottom: 0.65rem;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.7rem;
+  justify-content: end;
+  max-width: calc(100% - 1.5rem);
   color: #8393a2;
   font-size: 0.64rem;
   pointer-events: none;
@@ -801,6 +837,14 @@ canvas.dragging {
   color: var(--quiet);
   font-size: 0.64rem;
   font-variant-numeric: tabular-nums;
+}
+
+.color-key-empty {
+  grid-column: 1 / -1;
+  margin: 1rem 0;
+  color: var(--quiet);
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 footer {
