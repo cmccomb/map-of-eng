@@ -93,6 +93,11 @@ const retryLoadButton = document.querySelector("#retry-load");
 const filterPanel = document.querySelector(".filter-panel");
 const filterControls = document.querySelector(".filter-controls");
 const mapColumn = document.querySelector(".map-column");
+const loadingOverlay = document.querySelector("#loading-overlay");
+const loadingProgress = document.querySelector("#loading-progress");
+const loadingProgressValue = document.querySelector("#loading-progress-value");
+const loadingPercent = document.querySelector("#loading-percent");
+const loadingDetail = document.querySelector("#loading-detail");
 const tooltip = document.querySelector("#tooltip");
 const titleSearch = document.querySelector("#title-search");
 const selectedTitles = document.querySelector("#selected-titles");
@@ -1350,7 +1355,118 @@ function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
+function formatByteCount(bytes) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(0, bytes / 1024).toFixed(bytes < 102400 ? 1 : 0)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function resetLoadingProgress() {
+  loadingOverlay.hidden = false;
+  loadingProgress.removeAttribute("aria-valuenow");
+  loadingProgress.setAttribute("aria-valuetext", "Connecting");
+  loadingProgressValue.style.removeProperty("width");
+  loadingPercent.hidden = true;
+  loadingPercent.textContent = "0%";
+  loadingDetail.textContent = "Connecting to the publication archive…";
+}
+
+function updateLoadingProgress({ received, total, attempt }) {
+  const retryLabel = attempt > 1 ? " · retrying" : "";
+  if (!total) {
+    loadingProgress.removeAttribute("aria-valuenow");
+    loadingProgress.setAttribute(
+      "aria-valuetext",
+      received ? `${formatByteCount(received)} downloaded` : "Downloading",
+    );
+    loadingProgressValue.style.removeProperty("width");
+    loadingPercent.hidden = true;
+    loadingDetail.textContent = received
+      ? `${formatByteCount(received)} downloaded${retryLabel}`
+      : `Downloading publication data${retryLabel}…`;
+    return;
+  }
+
+  const percentage = Math.min(100, Math.floor((received / total) * 100));
+  loadingProgress.setAttribute("aria-valuenow", String(percentage));
+  loadingProgress.setAttribute("aria-valuetext", `${percentage}% downloaded`);
+  loadingProgressValue.style.width = `${percentage}%`;
+  loadingPercent.hidden = false;
+  loadingPercent.textContent = `${percentage}%`;
+  loadingDetail.textContent = `${formatByteCount(received)} of ${formatByteCount(
+    total,
+  )}${retryLabel}`;
+}
+
+function setLoadingProcessingState() {
+  loadingProgress.setAttribute("aria-valuenow", "100");
+  loadingProgress.setAttribute(
+    "aria-valuetext",
+    "Download complete; building the map",
+  );
+  loadingProgressValue.style.width = "100%";
+  loadingPercent.hidden = false;
+  loadingPercent.textContent = "100%";
+  loadingDetail.textContent = "Building the interactive map…";
+}
+
+function responseBodyLength(response, expectedBytes) {
+  if (Number.isSafeInteger(expectedBytes) && expectedBytes > 0) {
+    return expectedBytes;
+  }
+  if (response.headers.get("content-encoding")) return 0;
+  const declaredBytes = Number(response.headers.get("content-length"));
+  return Number.isSafeInteger(declaredBytes) && declaredBytes > 0
+    ? declaredBytes
+    : 0;
+}
+
+async function readResponseText(
+  response,
+  { expectedBytes = 0, onProgress, attempt = 1 } = {},
+) {
+  const total = responseBodyLength(response, expectedBytes);
+  if (
+    typeof onProgress !== "function" ||
+    !response.body?.getReader ||
+    typeof TextDecoder !== "function"
+  ) {
+    const text = await response.text();
+    if (typeof onProgress === "function") {
+      const received = new Blob([text]).size;
+      onProgress({ received, total: total || received, attempt });
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = "";
+  onProgress({ received, total, attempt });
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+    onProgress({ received, total, attempt });
+  }
+  text += decoder.decode();
+  return text;
+}
+
+async function fetchJson(
+  url,
+  label,
+  {
+    attempts = 2,
+    timeout = 15000,
+    expectedBytes = 0,
+    onDownloaded,
+    onProgress,
+  } = {},
+) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
@@ -1368,8 +1484,17 @@ async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
         throw error;
       }
       try {
-        return await response.json();
+        const text = await readResponseText(response, {
+          expectedBytes,
+          onProgress,
+          attempt,
+        });
+        if (typeof onDownloaded === "function") onDownloaded();
+        return JSON.parse(text);
       } catch (error) {
+        if (error.name === "AbortError" || error instanceof TypeError) {
+          throw error;
+        }
         throw new Error(`${label} did not contain valid JSON`, {
           cause: error,
         });
@@ -1390,6 +1515,7 @@ async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
 }
 
 function setLoadingState() {
+  resetLoadingProgress();
   statusElement.textContent = "Loading the publication landscape…";
   statusElement.classList.remove("error", "warning");
   retryLoadButton.hidden = true;
@@ -1401,6 +1527,7 @@ function setLoadingState() {
 }
 
 function setReadyState() {
+  loadingOverlay.hidden = true;
   retryLoadButton.hidden = true;
   filterControls.inert = false;
   filterPanel.setAttribute("aria-busy", "false");
@@ -1409,6 +1536,7 @@ function setReadyState() {
 
 function setUnavailableState(error) {
   console.error(error);
+  loadingOverlay.hidden = true;
   state.points = [];
   state.matchedPoints = [];
   state.drawablePoints = [];
@@ -1449,11 +1577,17 @@ async function loadMap() {
     );
     if (config.heading) titleElement.textContent = config.heading;
     document.title = `${config.title} Map`;
-    const artifact = core.parseArtifact(
-      await fetchJson(core.artifactUrl(config), "Publication artifact", {
+    const artifactDocument = await fetchJson(
+      core.artifactUrl(config),
+      "Publication artifact",
+      {
         timeout: ARTIFACT_FETCH_TIMEOUT_MS,
-      }),
+        expectedBytes: config.artifact_bytes,
+        onDownloaded: setLoadingProcessingState,
+        onProgress: updateLoadingProgress,
+      },
     );
+    const artifact = core.parseArtifact(artifactDocument);
 
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
@@ -1492,10 +1626,10 @@ async function loadMap() {
     state.sourceLabel = updated
       ? `newest Scholar profile refresh ${updated}`
       : "no verified Scholar profile refresh date";
-    setReadyState();
     applyFilters();
     resizeCanvas();
     resetView();
+    setReadyState();
   } catch (error) {
     setUnavailableState(error);
   }

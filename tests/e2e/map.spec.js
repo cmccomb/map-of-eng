@@ -18,6 +18,7 @@ async function openMap(page, artifact = makeArtifact()) {
     "false",
   );
   await expect(page.locator("#map-status")).toContainText("publications");
+  await expect(page.locator("#loading-overlay")).toBeHidden();
 }
 
 async function expectPublicationStatus(page, count) {
@@ -82,6 +83,62 @@ test("loads cleanly with useful defaults and a complete department key", async (
   expect(consoleErrors).toEqual([]);
 });
 
+test("reports determinate progress while publication data streams", async ({
+  page,
+}) => {
+  await page.addInitScript((artifact) => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.startsWith("https://huggingface.co/")) {
+        return originalFetch(input, init);
+      }
+
+      const bytes = new TextEncoder().encode(JSON.stringify(artifact));
+      const chunkSize = Math.ceil(bytes.length / 10);
+      let offset = 0;
+      const body = new ReadableStream({
+        async pull(controller) {
+          await new Promise((resolve) => window.setTimeout(resolve, 120));
+          if (offset >= bytes.length) {
+            controller.close();
+            return;
+          }
+          const nextOffset = Math.min(bytes.length, offset + chunkSize);
+          controller.enqueue(bytes.slice(offset, nextOffset));
+          offset = nextOffset;
+        },
+      });
+      return new Response(body, {
+        headers: {
+          "content-length": String(bytes.length),
+          "content-type": "application/json",
+        },
+      });
+    };
+  }, makeArtifact());
+
+  await page.goto("/");
+  const overlay = page.locator("#loading-overlay");
+  const progress = page.locator("#loading-progress");
+  const percent = page.locator("#loading-percent");
+  await expect(overlay).toBeVisible();
+  await expect
+    .poll(async () => {
+      const value = Number((await percent.textContent()).replace("%", ""));
+      return value > 0 && value < 100;
+    })
+    .toBe(true);
+  await expect(progress).toHaveAttribute("aria-valuenow", /[1-9][0-9]?/);
+  await expect(page.locator("#loading-detail")).toContainText(" of ");
+  await expect(page.locator(".filter-panel")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(overlay).toBeHidden();
+  await expectPublicationStatus(page, "8 publications");
+});
+
 test("uses the map as an edge-to-edge backdrop for floating controls", async ({
   page,
 }) => {
@@ -107,6 +164,7 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
     return {
       canvas: bounds("#research-map"),
       filters: bounds(".filter-panel"),
+      legendPanel: bounds(".legend-panel"),
       legend: bounds("#map-legend"),
       legendColumns: getComputedStyle(legend).gridTemplateColumns,
       legendOverflow: getComputedStyle(legend).overflowY,
@@ -125,8 +183,11 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
   expect(layout.bodyOverflow).toBe("hidden");
   expect(layout.filters.left).toBeGreaterThan(layout.canvas.left);
   expect(layout.filters.bottom).toBeLessThan(layout.canvas.bottom);
-  expect(layout.legend.left).toBeGreaterThan(layout.filters.left);
-  expect(layout.legend.right).toBeLessThanOrEqual(layout.filters.right);
+  expect(layout.legendPanel.top).toBeGreaterThan(layout.canvas.top);
+  expect(layout.legendPanel.right).toBeLessThan(layout.canvas.right);
+  expect(layout.legendPanel.left).toBeGreaterThan(layout.filters.right);
+  expect(layout.legend.left).toBeGreaterThan(layout.legendPanel.left);
+  expect(layout.legend.right).toBeLessThanOrEqual(layout.legendPanel.right);
   expect(layout.legendColumns.split(" ")).toHaveLength(1);
   expect(layout.legendOverflow).toBe("auto");
 });
@@ -412,6 +473,7 @@ test("a transient artifact failure recovers automatically", async ({
   });
   await page.goto("/");
   await expectPublicationStatus(page, "8 publications");
+  await expect(page.locator("#loading-overlay")).toBeHidden();
   expect(requests).toBe(2);
   await expect(page.locator("#retry-load")).toBeHidden();
 });
@@ -428,6 +490,7 @@ test("persistent failures show a retry path and a later retry restores the map",
   });
   await page.goto("/");
   await expect(page.locator("#retry-load")).toBeVisible();
+  await expect(page.locator("#loading-overlay")).toBeHidden();
   await expect(page.locator("#empty-title")).toHaveText(
     "The map could not be loaded.",
   );
@@ -494,17 +557,33 @@ for (const viewport of [
   }) => {
     await page.setViewportSize(viewport);
     await openMap(page);
-    const measurements = await page.evaluate(() => ({
-      canvasHeight: document
-        .querySelector("#research-map")
-        .getBoundingClientRect().height,
-      documentWidth: document.documentElement.scrollWidth,
-      viewportWidth: window.innerWidth,
-    }));
+    const measurements = await page.evaluate(() => {
+      const filters = document
+        .querySelector(".filter-panel")
+        .getBoundingClientRect();
+      const legend = document
+        .querySelector(".legend-panel")
+        .getBoundingClientRect();
+      const surfacesOverlap = !(
+        filters.right <= legend.left ||
+        legend.right <= filters.left ||
+        filters.bottom <= legend.top ||
+        legend.bottom <= filters.top
+      );
+      return {
+        canvasHeight: document
+          .querySelector("#research-map")
+          .getBoundingClientRect().height,
+        documentWidth: document.documentElement.scrollWidth,
+        surfacesOverlap,
+        viewportWidth: window.innerWidth,
+      };
+    });
     expect(measurements.documentWidth).toBeLessThanOrEqual(
       measurements.viewportWidth,
     );
     expect(measurements.canvasHeight).toBeGreaterThan(300);
+    expect(measurements.surfacesOverlap).toBe(false);
     await expect(page.locator("#map-legend")).toBeVisible();
     await expect(page.locator("#clear-filters")).toBeVisible();
   });

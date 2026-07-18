@@ -136,11 +136,13 @@ async function buildSite({
     .createHash("sha256")
     .update(artifactDocument.text, "utf8")
     .digest("hex");
+  const artifactBytes = Buffer.byteLength(artifactDocument.text, "utf8");
   const artifactName = `publications.${revision}.json`;
   const deployedConfig = {
     ...sourceConfig,
     dataset_revision: revision,
     artifact_url: `data/${artifactName}`,
+    artifact_bytes: artifactBytes,
     artifact_sha256: artifactDigest,
   };
   const version = (assetVersion || revision).slice(0, 12);
@@ -170,7 +172,7 @@ async function buildSite({
   ]);
 
   return {
-    artifact_bytes: Buffer.byteLength(artifactDocument.text, "utf8"),
+    artifact_bytes: artifactBytes,
     artifact_path: deployedConfig.artifact_url,
     artifact_sha256: artifactDigest,
     dataset_revision: revision,

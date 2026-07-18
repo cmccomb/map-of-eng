@@ -23,11 +23,13 @@ test("configuration parsing accepts a safe same-origin artifact path", () => {
   const config = core.parseConfig({
     title: "Research",
     artifact_url: "data/publications.0123456789abcdef.json",
+    artifact_bytes: 123456,
   });
   assert.equal(
     core.artifactUrl(config),
     "data/publications.0123456789abcdef.json",
   );
+  assert.equal(config.artifact_bytes, 123456);
 });
 
 test("configuration parsing rejects unsafe URLs and paths", () => {
@@ -41,6 +43,15 @@ test("configuration parsing rejects unsafe URLs and paths", () => {
         title: "Map",
         dataset_id: "owner/data",
         artifact_path: "../secret.json",
+      }),
+    core.ArtifactError,
+  );
+  assert.throws(
+    () =>
+      core.parseConfig({
+        title: "Map",
+        artifact_url: "data/publications.json",
+        artifact_bytes: -1,
       }),
     core.ArtifactError,
   );
