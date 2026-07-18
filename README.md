@@ -21,10 +21,10 @@ Faculty color mode assigns every cataloged faculty member a unique color. The
 client generates the set at load time with deterministic farthest-point
 sampling in OKLab, restricted to bright, in-gamut colors with strong contrast
 against the map canvas. It does not cycle through a fixed categorical palette.
-The complete searchable color key can also be used to add or remove faculty
-filters. For a work connected to more than one faculty member, an actively
-selected faculty member takes color priority; otherwise the first cataloged
-faculty connection is used.
+The searchable color key only lists faculty represented in the current matches
+and can also be used to add or remove faculty filters. For a work connected to
+more than one faculty member, an actively selected faculty member takes color
+priority; otherwise the first cataloged faculty connection is used.
 
 The canonical faculty registry, collection policy, normalized dataset schema,
 and artifact builder live in
