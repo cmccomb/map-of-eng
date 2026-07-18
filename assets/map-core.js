@@ -7,6 +7,7 @@
 
   const MAX_LAYOUTS = 8;
   const MAX_POINTS = 500000;
+  const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
   const FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
   const DATASET_ID_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
@@ -73,11 +74,25 @@
     if (!isObject(config)) throw new ArtifactError("Map configuration is invalid");
     const title = requiredString(config.title, "config.title", { maxLength: 200 });
     const heading = optionalString(config.heading, { maxLength: 200 });
+    const artifactBytes =
+      config.artifact_bytes === undefined ? 0 : Number(config.artifact_bytes);
+    if (
+      !Number.isSafeInteger(artifactBytes) ||
+      artifactBytes < 0 ||
+      artifactBytes > MAX_ARTIFACT_BYTES
+    ) {
+      throw new ArtifactError("config.artifact_bytes is invalid");
+    }
     const artifactUrl = optionalString(config.artifact_url, { maxLength: 4000 });
     if (artifactUrl) {
       const absoluteUrl = safeHttpUrl(artifactUrl);
       if (absoluteUrl) {
-        return { title, heading, artifact_url: absoluteUrl };
+        return {
+          title,
+          heading,
+          artifact_url: absoluteUrl,
+          artifact_bytes: artifactBytes,
+        };
       }
       if (
         artifactUrl.startsWith("//") ||
@@ -91,6 +106,7 @@
         title,
         heading,
         artifact_url: safeRelativePath(artifactUrl, "config.artifact_url"),
+        artifact_bytes: artifactBytes,
       };
     }
     const datasetId = requiredString(config.dataset_id, "config.dataset_id", {
@@ -114,6 +130,7 @@
       dataset_id: datasetId,
       dataset_revision: revision,
       artifact_path: artifactPath,
+      artifact_bytes: artifactBytes,
     };
   }
 

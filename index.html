@@ -200,18 +200,6 @@
             </div>
           </fieldset>
 
-          <section class="legend-panel" aria-labelledby="legend-title">
-            <div class="legend-heading">
-              <h3 id="legend-title">Color key</h3>
-              <p id="legend-summary" aria-live="polite">Loading…</p>
-            </div>
-            <div
-              id="map-legend"
-              class="map-legend"
-              aria-label="Map legend"
-            ></div>
-          </section>
-
           <fieldset class="mode-fieldset">
             <legend>Display</legend>
             <div class="segmented-control">
@@ -247,6 +235,18 @@
         aria-label="Research map workspace"
         aria-busy="true"
       >
+        <aside class="legend-panel" aria-labelledby="legend-title">
+          <div class="legend-heading">
+            <h3 id="legend-title">Color key</h3>
+            <p id="legend-summary" aria-live="polite">Loading…</p>
+          </div>
+          <div
+            id="map-legend"
+            class="map-legend"
+            aria-label="Map legend"
+          ></div>
+        </aside>
+
         <div class="map-shell" aria-label="Interactive publication map">
           <canvas
             id="research-map"
@@ -257,6 +257,28 @@
           >
             Your browser does not support the canvas element.
           </canvas>
+          <div id="loading-overlay" class="loading-overlay">
+            <div class="loading-card">
+              <div class="loading-heading">
+                <span id="loading-label">Loading publication data</span>
+                <strong id="loading-percent" hidden>0%</strong>
+              </div>
+              <div
+                id="loading-progress"
+                class="loading-progress"
+                role="progressbar"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-labelledby="loading-label"
+                aria-describedby="loading-detail"
+              >
+                <i id="loading-progress-value" aria-hidden="true"></i>
+              </div>
+              <p id="loading-detail" aria-live="polite">
+                Connecting to the publication archive…
+              </p>
+            </div>
+          </div>
           <div id="tooltip" class="tooltip" hidden></div>
           <div id="empty-state" class="empty-state" hidden>
             <strong id="empty-title"

@@ -51,6 +51,7 @@ test("site build pins, validates, and stages the map artifact locally", async (t
 
   assert.equal(result.dataset_revision, REVISION);
   assert.equal(result.point_count, artifact.point_count);
+  assert.equal(result.artifact_bytes, Buffer.byteLength(JSON.stringify(artifact)));
   assert.deepEqual(requestedUrls, [
     datasetRevisionUrl({
       dataset_id: "ccm/cmu-engineering-publications",
@@ -67,6 +68,7 @@ test("site build pins, validates, and stages the map artifact locally", async (t
     `data/publications.${REVISION}.json`,
   );
   assert.match(deployedConfig.artifact_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(deployedConfig.artifact_bytes, result.artifact_bytes);
   const deployedArtifact = JSON.parse(
     await fs.readFile(
       path.join(outputDirectory, deployedConfig.artifact_url),
