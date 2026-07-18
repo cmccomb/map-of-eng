@@ -184,7 +184,6 @@ h1 {
 }
 
 .field,
-.department-fieldset,
 .color-fieldset,
 .mode-fieldset {
   display: block;
@@ -194,8 +193,8 @@ h1 {
 }
 
 .field + .author-field,
-.author-field + .department-fieldset,
-.department-fieldset + .color-fieldset,
+.author-field + .department-field,
+.department-field + .color-fieldset,
 .color-fieldset + .mode-fieldset {
   margin-top: 1.15rem;
   padding-top: 1.15rem;
@@ -203,7 +202,6 @@ h1 {
 }
 
 .field > span,
-.department-fieldset legend,
 .color-fieldset legend,
 .mode-fieldset legend {
   display: block;
@@ -241,7 +239,8 @@ input[type="search"]:focus {
   box-shadow: 0 0 0 3px #67d5ff20;
 }
 
-.author-field {
+.author-field,
+.department-field {
   position: relative;
 }
 
@@ -284,14 +283,18 @@ input[type="search"]:focus {
   color: var(--quiet);
 }
 
-.selected-authors {
+.selected-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
   margin-top: 0.5rem;
 }
 
-.author-chip {
+.selected-filters:empty {
+  display: none;
+}
+
+.filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
@@ -305,7 +308,7 @@ input[type="search"]:focus {
   font-size: 0.72rem;
 }
 
-.author-chip i {
+.filter-chip i {
   color: var(--accent);
   font-style: normal;
 }
@@ -319,45 +322,6 @@ input[type="search"]:focus {
 
 .color-note {
   margin: 0.5rem 0 0;
-}
-
-.department-options {
-  display: grid;
-  gap: 0.18rem;
-}
-
-.department-option {
-  display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr) auto;
-  gap: 0.52rem;
-  align-items: center;
-  min-height: 2rem;
-  padding: 0.28rem 0.35rem;
-  border-radius: 0.35rem;
-  color: #d8e0e7;
-  cursor: pointer;
-  font-size: 0.72rem;
-  line-height: 1.2;
-}
-
-.department-option:hover {
-  background: #ffffff0a;
-}
-
-.department-option:has(input:checked) {
-  background: #1a3041;
-  color: #fff;
-}
-
-.department-option input {
-  width: 0.9rem;
-  height: 0.9rem;
-  margin: 0;
-}
-
-.department-count {
-  color: var(--quiet);
-  font-variant-numeric: tabular-nums;
 }
 
 .segmented-control {
@@ -847,9 +811,6 @@ footer p {
     max-height: none;
   }
 
-  .department-options {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 620px) {

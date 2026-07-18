@@ -9,13 +9,13 @@ publication data. The browser fetches the precomputed full-corpus
 `maps/publications.json` artifact and renders it with the dependency-free canvas
 client in `assets/map.js`.
 
-Every department uses the same semantic layout. Visitors can select multiple
-departments or faculty authors, search publication titles, choose between
-highlighting matches in context and showing matches alone, color comparisons by
-selected department or faculty author, and zoom to the resulting subset. Point
-size adapts to result density so full-corpus structure and sparse searches both
-remain legible. Search dimensions combine with AND; multiple values within a
-dimension combine with OR.
+Every department uses the same semantic layout. Visitors can search and select
+multiple departments or faculty authors as removable pills, search publication
+titles, choose between highlighting matches in context and showing matches
+alone, color comparisons by selected department or faculty author, and zoom to
+the resulting subset. Point size adapts to result density so full-corpus
+structure and sparse searches both remain legible. Search dimensions combine
+with AND; multiple values within a dimension combine with OR.
 
 Faculty color mode assigns every cataloged faculty member a unique color. The
 client generates the set at load time with deterministic farthest-point
