@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check JavaScript syntax
-        run: node --check assets/colors.js && node --check assets/map-core.js && node --check assets/map.js
+        run: node --check assets/colors.js && node --check assets/map-core.js && node --check assets/map.js && node --check scripts/build-site.js
       - name: Validate map configuration
         run: node -e 'require("./assets/map-core.js").parseConfig(require("./map-config.json"))'
       - name: Confirm static site files

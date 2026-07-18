@@ -1232,7 +1232,6 @@ async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
     const timeoutId = window.setTimeout(() => controller.abort(), timeout);
     try {
       const response = await fetch(url, {
-        cache: "no-cache",
         signal: controller.signal,
       });
       if (!response.ok) {
