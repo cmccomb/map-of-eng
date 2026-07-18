@@ -15,6 +15,7 @@ const DEPARTMENT_COLORS = [
 ];
 
 const UNASSIGNED_FACULTY_COLOR = "#657789";
+const TITLE_COLOR_CAPACITY = 32;
 
 const state = {
   points: [],
@@ -27,6 +28,9 @@ const state = {
   facultyById: new Map(),
   departmentColors: new Map(),
   facultyColors: new Map(),
+  titleColors: new Map(),
+  titlePalette: [],
+  activeTitleTerms: new Map(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
   colorMode: "department",
@@ -45,7 +49,6 @@ const state = {
   spatialIndex: new Map(),
   hoverFrame: 0,
   hoverEvent: null,
-  titleTimer: 0,
 };
 
 const canvas = document.querySelector("#research-map");
@@ -54,6 +57,7 @@ const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const tooltip = document.querySelector("#tooltip");
 const titleSearch = document.querySelector("#title-search");
+const selectedTitles = document.querySelector("#selected-titles");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
@@ -181,6 +185,11 @@ function drawBatch(screenPoints, radius, fillStyle, alpha) {
 }
 
 function colorFor(point) {
+  if (state.colorMode === "title" && state.activeTitleTerms.size) {
+    for (const query of state.activeTitleTerms.keys()) {
+      if (point._title?.includes(query)) return state.titleColors.get(query);
+    }
+  }
   if (state.colorMode === "faculty") {
     const selectedPersonId = point.faculty_ids.find(
       (candidate) =>
@@ -201,8 +210,13 @@ function colorFor(point) {
     );
     if (departmentId) return state.departmentColors.get(departmentId);
   }
-  if (state.activeFaculty.size || state.activeDepartments.size) return "#73c5df";
-  if (titleSearch.value.trim()) return "#73c5df";
+  if (
+    state.activeTitleTerms.size ||
+    state.activeFaculty.size ||
+    state.activeDepartments.size
+  ) {
+    return "#73c5df";
+  }
   return "#79b7cf";
 }
 
@@ -309,8 +323,13 @@ function scheduleDraw() {
   }
 }
 
-function pointMatches(point, titleQuery) {
-  if (titleQuery && !point._title.includes(titleQuery)) return false;
+function pointMatches(point, titleQueries) {
+  if (
+    titleQueries.length &&
+    !titleQueries.some((query) => point._title.includes(query))
+  ) {
+    return false;
+  }
   if (
     state.activeDepartments.size &&
     !point.department_ids.some((id) => state.activeDepartments.has(id))
@@ -410,6 +429,24 @@ function renderLegend() {
     } else {
       appendLegendItem("No faculty matches", UNASSIGNED_FACULTY_COLOR);
     }
+  } else if (state.colorMode === "title") {
+    const activeTerms = [...state.activeTitleTerms].map(([query, label]) => ({
+      label,
+      color: state.titleColors.get(query),
+    }));
+    if (activeTerms.length) {
+      for (const term of activeTerms.slice(0, 4)) {
+        appendLegendItem(term.label, term.color);
+      }
+      if (activeTerms.length > 4) {
+        appendLegendItem(`+${activeTerms.length - 4} more`, "#9dabb9");
+      }
+    } else {
+      appendLegendItem(
+        state.filtersActive ? "Match" : "Publication",
+        colorFor({ _title: "", department_ids: [], faculty_ids: [] }),
+      );
+    }
   } else {
     const activeGroups = state.departments
       .filter((department) =>
@@ -474,12 +511,14 @@ function openFacultyLegend() {
 }
 
 function applyFilters() {
-  const titleQuery = normalizedText(titleSearch.value);
+  const titleQueries = [...state.activeTitleTerms.keys()];
   state.filtersActive = Boolean(
-    titleQuery || state.activeDepartments.size || state.activeFaculty.size,
+    state.activeTitleTerms.size ||
+      state.activeDepartments.size ||
+      state.activeFaculty.size,
   );
   state.matchedPoints = state.points.filter((point) =>
-    pointMatches(point, titleQuery),
+    pointMatches(point, titleQueries),
   );
   const matchedIds = new Set(
     state.matchedPoints.map((point) => point.work_id),
@@ -691,6 +730,54 @@ function initializeFacultyColors() {
   state.facultyColors = new Map(
     state.faculty.map((person, index) => [person.person_id, palette[index]]),
   );
+}
+
+function ensureTitleColor(query) {
+  if (state.titleColors.has(query)) return;
+  const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
+  if (!generator) throw new Error("Title color generator is unavailable");
+  const colorIndex = state.titleColors.size;
+  if (colorIndex >= state.titlePalette.length) {
+    const nextCapacity = Math.max(
+      TITLE_COLOR_CAPACITY,
+      state.titlePalette.length * 2,
+    );
+    state.titlePalette = generator(nextCapacity);
+  }
+  state.titleColors.set(query, state.titlePalette[colorIndex]);
+}
+
+function renderSelectedTitles() {
+  selectedTitles.replaceChildren();
+  for (const [query, label] of state.activeTitleTerms) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filter-chip";
+    button.dataset.titleQuery = query;
+    button.title = `Remove ${label}`;
+    button.setAttribute("aria-label", `Remove title term ${label}`);
+    const name = document.createElement("span");
+    name.textContent = label;
+    const close = document.createElement("i");
+    close.textContent = "×";
+    close.setAttribute("aria-hidden", "true");
+    button.append(name, close);
+    selectedTitles.append(button);
+  }
+}
+
+function addTitleTerm() {
+  const label = titleSearch.value.trim().replace(/\s+/g, " ");
+  const query = normalizedText(label);
+  if (!query) return;
+  ensureTitleColor(query);
+  if (!state.activeTitleTerms.has(query)) {
+    state.activeTitleTerms.set(query, label);
+  }
+  titleSearch.value = "";
+  renderSelectedTitles();
+  applyFilters();
+  titleSearch.focus();
 }
 
 const authorFilter = createMultiSelect({
@@ -933,9 +1020,18 @@ canvas.addEventListener("pointerleave", () => {
   if (!state.dragging) tooltip.hidden = true;
 });
 
-titleSearch.addEventListener("input", () => {
-  window.clearTimeout(state.titleTimer);
-  state.titleTimer = window.setTimeout(applyFilters, 100);
+titleSearch.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  addTitleTerm();
+});
+
+selectedTitles.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-title-query]");
+  if (!button) return;
+  state.activeTitleTerms.delete(button.dataset.titleQuery);
+  renderSelectedTitles();
+  applyFilters();
 });
 
 document.querySelectorAll('input[name="display-mode"]').forEach((input) => {
@@ -984,6 +1080,8 @@ facultyLegendDialog.addEventListener("click", (event) => {
 
 clearFiltersButton.addEventListener("click", () => {
   titleSearch.value = "";
+  state.activeTitleTerms.clear();
+  renderSelectedTitles();
   authorFilter.clear();
   departmentFilter.clear();
   applyFilters();
@@ -1039,6 +1137,7 @@ async function loadMap() {
       .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
     initializeFacultyColors();
     initializeDepartmentColors();
+    renderSelectedTitles();
     authorFilter.renderSelected();
     departmentFilter.renderSelected();
     if (artifact.source_data_newest_at_utc) {
