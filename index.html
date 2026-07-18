@@ -124,6 +124,16 @@
           ></div>
         </div>
 
+        <fieldset class="layout-fieldset">
+          <legend>Map layout</legend>
+          <div id="layout-options" class="segmented-control"></div>
+          <p
+            id="layout-note"
+            class="field-note layout-note"
+            aria-live="polite"
+          ></p>
+        </fieldset>
+
         <fieldset class="color-fieldset">
           <legend>Color matches by</legend>
           <div class="segmented-control color-control">
@@ -269,7 +279,9 @@
     <footer>
       <p>
         Each point is one conservatively deduplicated work positioned from its
-        semantic embedding. The axes have no intrinsic meaning. Publication
+        semantic embedding. PCA emphasizes broad structure; t-SNE emphasizes
+        local neighborhoods. The axes have no intrinsic meaning, and distances
+        between separate t-SNE clusters are not comparable. Publication
         observations are retained centrally and Scholar profiles are refreshed
         conservatively.
       </p>

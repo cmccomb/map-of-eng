@@ -7,12 +7,15 @@ dataset.
 It does not scrape Google Scholar, run embedding models, or commit generated
 publication data. The browser fetches the precomputed full-corpus
 `maps/publications.json` artifact and renders it with the dependency-free canvas
-client in `assets/map.js`.
+client in `assets/map.js`. It never computes embeddings or layouts.
 
-Every department uses the same semantic layout. Visitors can build removable
-filter pills for publication-title terms, departments, and faculty authors;
-choose between highlighting matches in context and showing matches alone;
-color comparisons by title term, department, or faculty author; and zoom to the
+Every department uses the same semantic layouts. Visitors can switch between a
+PCA view of broad global structure and a t-SNE view of local topical
+neighborhoods. Both are computed centrally over the same deduplicated works and
+shipped as coordinates in the artifact. Visitors can build removable filter
+pills for publication-title terms, departments, and faculty authors; choose
+between highlighting matches in context and showing matches alone; color
+comparisons by title term, department, or faculty author; and zoom to the
 resulting subset. Point size adapts to result density so full-corpus structure
 and sparse searches both remain legible. Search dimensions combine with AND;
 multiple values within a dimension combine with OR.
