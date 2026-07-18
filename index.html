@@ -16,6 +16,7 @@
     <title>CMU Engineering Research Map</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="assets/map.css">
+    <script src="assets/colors.js" defer></script>
     <script src="assets/map.js" defer></script>
   </head>
   <body>
@@ -106,8 +107,8 @@
             </label>
           </div>
           <p class="field-note color-note">
-            Faculty mode shows up to four of the most represented faculty;
-            selected faculty take priority.
+            Every faculty member has a distinct, perceptually spaced color.
+            On coauthored work, selected faculty take priority.
           </p>
         </fieldset>
 
@@ -194,6 +195,42 @@
         </aside>
       </section>
     </main>
+
+    <dialog
+      id="faculty-legend-dialog"
+      class="faculty-legend-dialog"
+      aria-labelledby="faculty-legend-title"
+    >
+      <div class="faculty-legend-card">
+        <div class="faculty-legend-heading">
+          <div>
+            <p class="section-number">Faculty color key</p>
+            <h2 id="faculty-legend-title">Every faculty color</h2>
+          </div>
+          <button
+            id="close-faculty-legend"
+            class="close-detail"
+            type="button"
+            aria-label="Close faculty color key"
+          >×</button>
+        </div>
+        <label class="field" for="faculty-legend-search">
+          <span>Find a faculty member</span>
+          <input
+            id="faculty-legend-search"
+            type="search"
+            autocomplete="off"
+            placeholder="Search the color key"
+          >
+        </label>
+        <p id="faculty-legend-count" class="faculty-legend-count"></p>
+        <div
+          id="faculty-legend-list"
+          class="faculty-legend-list"
+          aria-label="Faculty colors"
+        ></div>
+      </div>
+    </dialog>
 
     <footer>
       <p>

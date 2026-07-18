@@ -38,6 +38,7 @@ jobs:
           cp -R assets _site/assets
           asset_version="${GITHUB_SHA::12}"
           sed -i "s|assets/map.css|assets/map.css?v=${asset_version}|" _site/index.html
+          sed -i "s|assets/colors.js|assets/colors.js?v=${asset_version}|" _site/index.html
           sed -i "s|assets/map.js|assets/map.js?v=${asset_version}|" _site/index.html
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
