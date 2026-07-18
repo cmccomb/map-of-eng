@@ -2,6 +2,7 @@
 
 const TITLE_COLOR_CAPACITY = 32;
 const SEQUENTIAL_COLOR_STEPS = 48;
+const ARTIFACT_FETCH_TIMEOUT_MS = 60_000;
 const core = globalThis.ResearchMapCore;
 
 const state = {
@@ -1449,7 +1450,9 @@ async function loadMap() {
     if (config.heading) titleElement.textContent = config.heading;
     document.title = `${config.title} Map`;
     const artifact = core.parseArtifact(
-      await fetchJson(core.artifactUrl(config), "Publication artifact"),
+      await fetchJson(core.artifactUrl(config), "Publication artifact", {
+        timeout: ARTIFACT_FETCH_TIMEOUT_MS,
+      }),
     );
 
     state.departments = artifact.catalogs.departments;
