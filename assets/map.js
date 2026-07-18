@@ -1,21 +1,8 @@
 "use strict";
 
-const DEPARTMENT_COLORS = [
-  "#67d5ff",
-  "#ffbd68",
-  "#a9df79",
-  "#e89bff",
-  "#ff8d7e",
-  "#78e4c3",
-  "#9aa9ff",
-  "#f8df72",
-  "#ff9ec8",
-  "#7eb6ff",
-  "#d5a6ff",
-];
-
 const UNASSIGNED_FACULTY_COLOR = "#657789";
 const TITLE_COLOR_CAPACITY = 32;
+const core = globalThis.ResearchMapCore;
 
 const state = {
   points: [],
@@ -49,6 +36,9 @@ const state = {
   dragDistance: 0,
   framePending: false,
   sourceLabel: "",
+  omittedPointCount: 0,
+  canvasWidth: 0,
+  canvasHeight: 0,
   spatialIndex: new Map(),
   hoverFrame: 0,
   hoverEvent: null,
@@ -58,6 +48,9 @@ const canvas = document.querySelector("#research-map");
 const context = canvas.getContext("2d", { alpha: false });
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
+const retryLoadButton = document.querySelector("#retry-load");
+const filterPanel = document.querySelector(".filter-panel");
+const mapColumn = document.querySelector(".map-column");
 const tooltip = document.querySelector("#tooltip");
 const titleSearch = document.querySelector("#title-search");
 const selectedTitles = document.querySelector("#selected-titles");
@@ -78,6 +71,8 @@ const matchCount = document.querySelector("#match-count");
 const matchLabel = document.querySelector("#match-label");
 const mapLegend = document.querySelector("#map-legend");
 const emptyState = document.querySelector("#empty-state");
+const emptyTitle = document.querySelector("#empty-title");
+const emptyCopy = document.querySelector("#empty-copy");
 const detailPanel = document.querySelector("#detail-panel");
 const detailTitle = document.querySelector("#detail-title");
 const detailMeta = document.querySelector("#detail-meta");
@@ -86,26 +81,18 @@ const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
 const detailLink = document.querySelector("#detail-link");
 const closeDetail = document.querySelector("#close-detail");
-const facultyLegendDialog = document.querySelector("#faculty-legend-dialog");
-const facultyLegendSearch = document.querySelector("#faculty-legend-search");
-const facultyLegendCount = document.querySelector("#faculty-legend-count");
-const facultyLegendList = document.querySelector("#faculty-legend-list");
-const closeFacultyLegend = document.querySelector("#close-faculty-legend");
+const colorKeyDialog = document.querySelector("#color-key-dialog");
+const colorKeyKicker = document.querySelector("#color-key-kicker");
+const colorKeyTitle = document.querySelector("#color-key-title");
+const colorKeySearch = document.querySelector("#color-key-search");
+const colorKeySearchLabel = document.querySelector("#color-key-search-label");
+const colorKeyCount = document.querySelector("#color-key-count");
+const colorKeyList = document.querySelector("#color-key-list");
+const closeColorKey = document.querySelector("#close-color-key");
+let colorKeyMode = "faculty";
 
 function normalizedText(value) {
-  return String(value || "").trim().toLocaleLowerCase();
-}
-
-function facultyWithMatches() {
-  const matchedFacultyIds = new Set();
-  for (const point of state.matchedPoints) {
-    for (const personId of point.faculty_ids) {
-      if (state.facultyById.has(personId)) matchedFacultyIds.add(personId);
-    }
-  }
-  return state.faculty.filter((person) =>
-    matchedFacultyIds.has(person.person_id),
-  );
+  return core.normalizedText(value);
 }
 
 function facultyNames(point) {
@@ -121,15 +108,7 @@ function departmentNames(point) {
 }
 
 function preparePoint(point) {
-  const coordinates = new Map(
-    state.layouts.map((layout) => [
-      layout.layout_id,
-      {
-        x: Number(point[layout.x_field]),
-        y: Number(point[layout.y_field]),
-      },
-    ]),
-  );
+  const coordinates = new Map(Object.entries(point._coordinates));
   const activeCoordinates = coordinates.get(state.layoutId);
   return {
     ...point,
@@ -140,15 +119,8 @@ function preparePoint(point) {
       : [],
     faculty_ids: Array.isArray(point.faculty_ids) ? point.faculty_ids : [],
     _coordinates: coordinates,
-    _title: normalizedText(point.title),
+    _title: point._title,
   };
-}
-
-function hasEveryLayout(point) {
-  return state.layouts.every((layout) => {
-    const coordinates = point._coordinates.get(layout.layout_id);
-    return Number.isFinite(coordinates?.x) && Number.isFinite(coordinates?.y);
-  });
 }
 
 function layoutDescription(layout) {
@@ -195,17 +167,32 @@ function activateLayout(layoutId, { fit = true } = {}) {
 }
 
 function resizeCanvas() {
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
   const bounds = canvas.getBoundingClientRect();
+  if (bounds.width <= 0 || bounds.height <= 0 || !context) return;
+  const hadSize = state.canvasWidth > 0 && state.canvasHeight > 0;
+  const oldScale = core.baseScale(state.canvasWidth, state.canvasHeight);
+  const centerX = state.canvasWidth
+    ? -state.offsetX / (oldScale * state.scale)
+    : 0;
+  const centerY = state.canvasHeight
+    ? state.offsetY / (oldScale * state.scale)
+    : 0;
+  state.canvasWidth = bounds.width;
+  state.canvasHeight = bounds.height;
   canvas.width = Math.max(1, Math.round(bounds.width * ratio));
   canvas.height = Math.max(1, Math.round(bounds.height * ratio));
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  if (hadSize) {
+    const newScale = core.baseScale(state.canvasWidth, state.canvasHeight);
+    state.offsetX = -centerX * newScale * state.scale;
+    state.offsetY = centerY * newScale * state.scale;
+  }
   scheduleDraw();
 }
 
 function baseScale(width, height) {
-  const margin = 34;
-  return Math.max(1, Math.min(width - margin * 2, height - margin * 2) / 2);
+  return core.baseScale(width, height);
 }
 
 function mapToScreen(point, width, height) {
@@ -257,22 +244,19 @@ function colorFor(point) {
     }
   }
   if (state.colorMode === "faculty") {
-    const selectedPersonId = point.faculty_ids.find(
-      (candidate) =>
-        state.activeFaculty.has(candidate) &&
-        state.facultyColors.has(candidate),
+    const personId = core.preferredId(
+      point.faculty_ids,
+      state.activeFaculty,
+      state.facultyColors,
     );
-    const personId =
-      selectedPersonId ||
-      point.faculty_ids.find((candidate) =>
-        state.facultyColors.has(candidate),
-      );
     if (personId) return state.facultyColors.get(personId);
     return UNASSIGNED_FACULTY_COLOR;
   }
-  if (state.colorMode === "department" && state.activeDepartments.size) {
-    const departmentId = point.department_ids.find((candidate) =>
-      state.activeDepartments.has(candidate),
+  if (state.colorMode === "department") {
+    const departmentId = core.preferredId(
+      point.department_ids,
+      state.activeDepartments,
+      state.departmentColors,
     );
     if (departmentId) return state.departmentColors.get(departmentId);
   }
@@ -389,28 +373,6 @@ function scheduleDraw() {
   }
 }
 
-function pointMatches(point, titleQueries) {
-  if (
-    titleQueries.length &&
-    !titleQueries.some((query) => point._title.includes(query))
-  ) {
-    return false;
-  }
-  if (
-    state.activeDepartments.size &&
-    !point.department_ids.some((id) => state.activeDepartments.has(id))
-  ) {
-    return false;
-  }
-  if (
-    state.activeFaculty.size &&
-    !point.faculty_ids.some((id) => state.activeFaculty.has(id))
-  ) {
-    return false;
-  }
-  return true;
-}
-
 function updateStatus() {
   const total = state.points.length;
   const matched = state.matchedPoints.length;
@@ -423,11 +385,32 @@ function updateStatus() {
   const countLabel = state.filtersActive
     ? `${matched.toLocaleString()} of ${total.toLocaleString()} publications match`
     : `${total.toLocaleString()} publications`;
-  statusElement.textContent = state.sourceLabel
-    ? `${countLabel} · ${state.sourceLabel}`
-    : countLabel;
+  const statusParts = [countLabel];
+  if (state.sourceLabel) statusParts.push(state.sourceLabel);
+  if (state.omittedPointCount) {
+    statusParts.push(
+      `${state.omittedPointCount.toLocaleString()} invalid record${state.omittedPointCount === 1 ? "" : "s"} omitted`,
+    );
+  }
+  statusElement.textContent = statusParts.join(" · ");
+  statusElement.classList.toggle("warning", state.omittedPointCount > 0);
   emptyState.hidden = matched !== 0;
-  zoomResultsButton.disabled = matched === 0;
+  if (!matched && total) {
+    emptyTitle.textContent = "No publications match this combination.";
+    emptyCopy.textContent =
+      "Try a broader title, author, or department selection.";
+  } else if (!total) {
+    emptyTitle.textContent = "No publications are available yet.";
+    emptyCopy.textContent = "The data source loaded successfully but is empty.";
+  }
+  clearFiltersButton.disabled = !state.filtersActive;
+  zoomResultsButton.disabled = !state.filtersActive || matched === 0;
+  canvas.setAttribute(
+    "aria-label",
+    `Semantic scatter plot showing ${matched.toLocaleString()} ${
+      state.filtersActive ? "matching " : ""
+    }publications`,
+  );
 }
 
 function appendLegendItem(label, color, className = "legend-dot-match") {
@@ -439,26 +422,53 @@ function appendLegendItem(label, color, className = "legend-dot-match") {
   mapLegend.append(item);
 }
 
-function appendFacultyLegendButton(people) {
+function colorKeyItems(mode = state.colorMode) {
+  const isFaculty = mode === "faculty";
+  const idField = isFaculty ? "person_id" : "department_id";
+  const labelField = isFaculty ? "display_name" : "title";
+  const pointField = isFaculty ? "faculty_ids" : "department_ids";
+  const catalog = isFaculty ? state.faculty : state.departments;
+  const colors = isFaculty ? state.facultyColors : state.departmentColors;
+  const activeIds = isFaculty ? state.activeFaculty : state.activeDepartments;
+  const counts = new Map();
+  for (const point of state.matchedPoints) {
+    for (const id of point[pointField]) {
+      if (colors.has(id)) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+  }
+  return catalog
+    .filter((item) => counts.has(item[idField]))
+    .map((item) => ({
+      id: item[idField],
+      label: item[labelField],
+      color: colors.get(item[idField]),
+      count: counts.get(item[idField]),
+      selected: activeIds.has(item[idField]),
+    }));
+}
+
+function appendColorKeyButton(items, mode) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "faculty-legend-button";
-  button.dataset.action = "open-faculty-legend";
+  button.dataset.action = "open-color-key";
+  button.dataset.colorMode = mode;
   button.setAttribute("aria-haspopup", "dialog");
   const spectrum = document.createElement("span");
   spectrum.className = "legend-spectrum";
   spectrum.setAttribute("aria-hidden", "true");
-  const colorCount = people.length;
+  const colorCount = items.length;
   const swatchCount = Math.min(10, colorCount);
   for (let index = 0; index < swatchCount; index += 1) {
     const swatch = document.createElement("i");
     const paletteIndex = Math.floor((index * colorCount) / swatchCount);
-    const personId = people[paletteIndex].person_id;
-    swatch.style.backgroundColor = state.facultyColors.get(personId);
+    swatch.style.backgroundColor = items[paletteIndex].color;
     spectrum.append(swatch);
   }
   const label = document.createElement("span");
-  label.textContent = `View ${colorCount.toLocaleString()} faculty colors`;
+  label.textContent = `View ${colorCount.toLocaleString()} ${
+    mode === "faculty" ? "faculty" : "department"
+  } colors`;
   button.append(spectrum, label);
   mapLegend.append(button);
 }
@@ -466,18 +476,13 @@ function appendFacultyLegendButton(people) {
 function renderLegend() {
   mapLegend.replaceChildren();
   if (state.colorMode === "faculty") {
-    const people = facultyWithMatches();
-    const selectedPeople = people.filter((person) =>
-      state.activeFaculty.has(person.person_id),
-    );
-    for (const person of selectedPeople.slice(0, 3)) {
-      appendLegendItem(
-        person.display_name,
-        state.facultyColors.get(person.person_id),
-      );
+    const items = colorKeyItems("faculty");
+    const selectedItems = items.filter((item) => item.selected);
+    for (const item of selectedItems.slice(0, 3)) {
+      appendLegendItem(item.label, item.color);
     }
-    if (selectedPeople.length > 3) {
-      appendLegendItem(`+${selectedPeople.length - 3} selected`, "#9dabb9");
+    if (selectedItems.length > 3) {
+      appendLegendItem(`+${selectedItems.length - 3} selected`, "#9dabb9");
     }
     const hasUnmappedMatches = state.matchedPoints.some(
       (point) =>
@@ -485,8 +490,8 @@ function renderLegend() {
           state.facultyColors.has(personId),
         ),
     );
-    if (people.length) {
-      appendFacultyLegendButton(people);
+    if (items.length) {
+      appendColorKeyButton(items, "faculty");
       if (hasUnmappedMatches) {
         appendLegendItem("No mapped faculty", UNASSIGNED_FACULTY_COLOR);
       }
@@ -514,25 +519,22 @@ function renderLegend() {
       );
     }
   } else {
-    const activeGroups = state.departments
-      .filter((department) =>
-        state.activeDepartments.has(department.department_id),
-      )
-      .map((department) => ({
-        label: department.title,
-        color: state.departmentColors.get(department.department_id),
-      }));
-    if (activeGroups.length) {
-      for (const group of activeGroups.slice(0, 4)) {
-        appendLegendItem(group.label, group.color);
+    const items = colorKeyItems("department");
+    const selectedItems = items.filter((item) => item.selected);
+    if (selectedItems.length) {
+      for (const item of selectedItems.slice(0, 4)) {
+        appendLegendItem(item.label, item.color);
       }
-      if (activeGroups.length > 4) {
-        appendLegendItem(`+${activeGroups.length - 4} more`, "#9dabb9");
+      if (selectedItems.length > 4) {
+        appendLegendItem(`+${selectedItems.length - 4} more`, "#9dabb9");
       }
+    }
+    if (items.length) {
+      appendColorKeyButton(items, "department");
     } else {
       appendLegendItem(
-        state.filtersActive ? "Match" : "Publication",
-        colorFor({ department_ids: [], faculty_ids: [] }),
+        "No department matches",
+        UNASSIGNED_FACULTY_COLOR,
       );
     }
   }
@@ -541,39 +543,60 @@ function renderLegend() {
   }
 }
 
-function renderFacultyLegend() {
-  const query = normalizedText(facultyLegendSearch.value);
-  const matchingPeople = facultyWithMatches();
-  const people = matchingPeople.filter((person) =>
-    normalizedText(person.display_name).includes(query),
+function renderColorKey() {
+  const query = normalizedText(colorKeySearch.value);
+  const allItems = colorKeyItems(colorKeyMode);
+  const items = allItems.filter((item) =>
+    normalizedText(item.label).includes(query),
   );
-  facultyLegendCount.textContent = query
-    ? `${people.length.toLocaleString()} of ${matchingPeople.length.toLocaleString()} faculty with matches`
-    : `${matchingPeople.length.toLocaleString()} faculty with matches · select any name to filter the map`;
-  facultyLegendList.replaceChildren();
-  for (const person of people) {
-    const selected = state.activeFaculty.has(person.person_id);
+  const noun = colorKeyMode === "faculty" ? "faculty" : "departments";
+  colorKeyCount.textContent = query
+    ? `${items.length.toLocaleString()} of ${allItems.length.toLocaleString()} ${noun} with matches`
+    : `${allItems.length.toLocaleString()} ${noun} with matches · select any name to filter the map`;
+  colorKeyList.replaceChildren();
+  for (const item of items) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "faculty-legend-item";
-    button.dataset.personId = person.person_id;
-    button.setAttribute("aria-pressed", String(selected));
+    button.dataset.itemId = item.id;
+    button.setAttribute("aria-pressed", String(item.selected));
     const swatch = document.createElement("i");
-    swatch.style.backgroundColor = state.facultyColors.get(person.person_id);
+    swatch.style.backgroundColor = item.color;
     swatch.setAttribute("aria-hidden", "true");
     const name = document.createElement("span");
-    name.textContent = person.display_name;
+    name.textContent = item.label;
     const count = document.createElement("small");
-    count.textContent = `${Number(person.publication_count || 0).toLocaleString()} works`;
+    count.textContent = `${item.count.toLocaleString()} match${item.count === 1 ? "" : "es"}`;
     button.append(swatch, name, count);
-    facultyLegendList.append(button);
+    colorKeyList.append(button);
+  }
+  if (!items.length) {
+    const message = document.createElement("p");
+    message.className = "color-key-empty";
+    message.textContent = "No colors match that search.";
+    colorKeyList.append(message);
   }
 }
 
-function openFacultyLegend() {
-  renderFacultyLegend();
-  facultyLegendDialog.showModal();
-  facultyLegendSearch.focus();
+function openColorKey(mode) {
+  colorKeyMode = mode === "department" ? "department" : "faculty";
+  const facultyMode = colorKeyMode === "faculty";
+  colorKeyKicker.textContent = facultyMode
+    ? "Faculty color key"
+    : "Department color key";
+  colorKeyTitle.textContent = facultyMode
+    ? "Faculty represented in matches"
+    : "Departments represented in matches";
+  colorKeySearchLabel.textContent = facultyMode
+    ? "Find a faculty member"
+    : "Find a department";
+  colorKeySearch.placeholder = facultyMode
+    ? "Search faculty names"
+    : "Search department names";
+  colorKeySearch.value = "";
+  renderColorKey();
+  colorKeyDialog.showModal();
+  colorKeySearch.focus();
 }
 
 function applyFilters() {
@@ -584,7 +607,11 @@ function applyFilters() {
       state.activeFaculty.size,
   );
   state.matchedPoints = state.points.filter((point) =>
-    pointMatches(point, titleQueries),
+    core.pointMatches(point, {
+      titleQueries,
+      departmentIds: state.activeDepartments,
+      facultyIds: state.activeFaculty,
+    }),
   );
   const matchedIds = new Set(
     state.matchedPoints.map((point) => point.work_id),
@@ -607,15 +634,16 @@ function applyFilters() {
   tooltip.hidden = true;
   updateStatus();
   renderLegend();
+  if (colorKeyDialog.open) renderColorKey();
   scheduleDraw();
 }
 
 function initializeDepartmentColors() {
+  const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
+  if (!generator) throw new Error("Department color generator is unavailable");
+  const palette = generator(state.departments.length);
   state.departments.forEach((department, index) => {
-    state.departmentColors.set(
-      department.department_id,
-      DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length],
-    );
+    state.departmentColors.set(department.department_id, palette[index]);
   });
 }
 
@@ -634,6 +662,7 @@ function createMultiSelect({
 }) {
   let suggestions = [];
   let suggestionIndex = -1;
+  let blurTimer = 0;
 
   function hideSuggestions() {
     suggestions = [];
@@ -656,6 +685,7 @@ function createMultiSelect({
   }
 
   function renderSuggestions() {
+    window.clearTimeout(blurTimer);
     const query = normalizedText(input.value);
     if (!query && !showAllOnEmpty) {
       hideSuggestions();
@@ -677,7 +707,17 @@ function createMultiSelect({
       })
       .slice(0, suggestionLimit);
     if (!suggestions.length) {
-      hideSuggestions();
+      suggestionIndex = -1;
+      suggestionsList.replaceChildren();
+      const message = document.createElement("li");
+      message.className = "suggestion-empty";
+      message.setAttribute("role", "option");
+      message.setAttribute("aria-disabled", "true");
+      message.textContent = query ? "No matches" : "No more options";
+      suggestionsList.append(message);
+      suggestionsList.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      input.removeAttribute("aria-activedescendant");
       return;
     }
 
@@ -739,9 +779,15 @@ function createMultiSelect({
   input.addEventListener("input", renderSuggestions);
   input.addEventListener("focus", renderSuggestions);
   input.addEventListener("blur", () => {
-    window.setTimeout(hideSuggestions, 120);
+    blurTimer = window.setTimeout(hideSuggestions, 120);
   });
   input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !suggestionsList.hidden) {
+      window.clearTimeout(blurTimer);
+      hideSuggestions();
+      event.preventDefault();
+      return;
+    }
     if (suggestionsList.hidden || !suggestions.length) return;
     if (event.key === "ArrowDown") {
       suggestionIndex = (suggestionIndex + 1) % suggestions.length;
@@ -751,9 +797,6 @@ function createMultiSelect({
     } else if (event.key === "Enter") {
       addItem(itemId(suggestions[suggestionIndex]));
       event.preventDefault();
-      return;
-    } else if (event.key === "Escape") {
-      hideSuggestions();
       return;
     } else {
       return;
@@ -956,38 +999,30 @@ function resetView() {
 }
 
 function fitPoints(points) {
-  if (!points.length) return;
+  if (!points.length) return false;
   const bounds = canvas.getBoundingClientRect();
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  const rangeX = Math.max(maxX - minX, 0.04);
-  const rangeY = Math.max(maxY - minY, 0.04);
-  const padding = 28;
-  const unitScale = baseScale(bounds.width, bounds.height);
-  state.scale = Math.min(
-    25,
-    Math.max(
-      0.7,
-      Math.min(
-        (bounds.width - padding * 2) / (rangeX * unitScale),
-        (bounds.height - padding * 2) / (rangeY * unitScale),
-      ),
-    ),
-  );
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  state.offsetX = -centerX * unitScale * state.scale;
-  state.offsetY = centerY * unitScale * state.scale;
+  const view = core.fitView(points, bounds.width, bounds.height);
+  if (!view) return false;
+  Object.assign(state, view);
   tooltip.hidden = true;
   scheduleDraw();
+  return true;
+}
+
+function pointNearestCanvasCenter() {
+  const candidates = state.screenPoints.filter(
+    (screenPoint) => !state.filtersActive || screenPoint.matched,
+  );
+  if (!candidates.length) return null;
+  const centerX = state.canvasWidth / 2;
+  const centerY = state.canvasHeight / 2;
+  return candidates.reduce((nearest, candidate) => {
+    const distance =
+      (candidate.x - centerX) ** 2 + (candidate.y - centerY) ** 2;
+    return !nearest || distance < nearest.distance
+      ? { point: candidate.point, distance }
+      : nearest;
+  }, null)?.point;
 }
 
 canvas.addEventListener(
@@ -1074,6 +1109,14 @@ canvas.addEventListener("keydown", (event) => {
   } else if (event.key === "Escape") {
     detailPanel.hidden = true;
     state.selectedWorkId = "";
+  } else if (event.key === "Home") {
+    resetView();
+  } else if (event.key === "Enter") {
+    const point = pointNearestCanvasCenter();
+    if (point) {
+      showDetails(point);
+      detailPanel.focus();
+    }
   } else {
     return;
   }
@@ -1117,36 +1160,38 @@ document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked) return;
     state.colorMode = input.value;
-    if (state.colorMode !== "faculty" && facultyLegendDialog.open) {
-      facultyLegendDialog.close();
-    }
+    if (colorKeyDialog.open) colorKeyDialog.close();
     renderLegend();
     scheduleDraw();
   });
 });
 
 mapLegend.addEventListener("click", (event) => {
-  if (event.target.closest('[data-action="open-faculty-legend"]')) {
-    openFacultyLegend();
-  }
+  const button = event.target.closest('[data-action="open-color-key"]');
+  if (button) openColorKey(button.dataset.colorMode);
 });
 
-facultyLegendSearch.addEventListener("input", renderFacultyLegend);
-facultyLegendList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-person-id]");
+colorKeySearch.addEventListener("input", renderColorKey);
+colorKeyList.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-item-id]");
   if (!button) return;
-  const { personId } = button.dataset;
-  if (state.activeFaculty.has(personId)) state.activeFaculty.delete(personId);
-  else state.activeFaculty.add(personId);
-  authorFilter.renderSelected();
+  const { itemId } = button.dataset;
+  const activeIds =
+    colorKeyMode === "faculty"
+      ? state.activeFaculty
+      : state.activeDepartments;
+  if (activeIds.has(itemId)) activeIds.delete(itemId);
+  else activeIds.add(itemId);
+  if (colorKeyMode === "faculty") authorFilter.renderSelected();
+  else departmentFilter.renderSelected();
   applyFilters();
-  renderFacultyLegend();
+  renderColorKey();
 });
-closeFacultyLegend.addEventListener("click", () => {
-  facultyLegendDialog.close();
+closeColorKey.addEventListener("click", () => {
+  colorKeyDialog.close();
 });
-facultyLegendDialog.addEventListener("click", (event) => {
-  if (event.target === facultyLegendDialog) facultyLegendDialog.close();
+colorKeyDialog.addEventListener("click", (event) => {
+  if (event.target === colorKeyDialog) colorKeyDialog.close();
 });
 
 clearFiltersButton.addEventListener("click", () => {
@@ -1156,7 +1201,7 @@ clearFiltersButton.addEventListener("click", () => {
   authorFilter.clear();
   departmentFilter.clear();
   applyFilters();
-  if (facultyLegendDialog.open) renderFacultyLegend();
+  if (colorKeyDialog.open) renderColorKey();
 });
 
 zoomResultsButton.addEventListener("click", () => {
@@ -1169,98 +1214,160 @@ closeDetail.addEventListener("click", () => {
   canvas.focus();
   scheduleDraw();
 });
-window.addEventListener("resize", resizeCanvas);
+if ("ResizeObserver" in window) {
+  const canvasResizeObserver = new ResizeObserver(resizeCanvas);
+  canvasResizeObserver.observe(canvas);
+} else {
+  window.addEventListener("resize", resizeCanvas);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, {
+        cache: "no-cache",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const error = new Error(`${label} returned HTTP ${response.status}`);
+        error.retryable =
+          response.status === 408 ||
+          response.status === 429 ||
+          response.status >= 500;
+        throw error;
+      }
+      try {
+        return await response.json();
+      } catch (error) {
+        throw new Error(`${label} did not contain valid JSON`, { cause: error });
+      }
+    } catch (error) {
+      lastError = error;
+      const retryable =
+        error.name === "AbortError" ||
+        error instanceof TypeError ||
+        error.retryable === true;
+      if (!retryable || attempt === attempts) break;
+      await wait(400 * attempt);
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+  throw lastError;
+}
+
+function setLoadingState() {
+  statusElement.textContent = "Loading the publication landscape…";
+  statusElement.classList.remove("error", "warning");
+  retryLoadButton.hidden = true;
+  filterPanel.inert = true;
+  filterPanel.setAttribute("aria-busy", "true");
+  mapColumn.setAttribute("aria-busy", "true");
+  canvas.removeAttribute("aria-disabled");
+  emptyState.hidden = true;
+}
+
+function setReadyState() {
+  retryLoadButton.hidden = true;
+  filterPanel.inert = false;
+  filterPanel.setAttribute("aria-busy", "false");
+  mapColumn.setAttribute("aria-busy", "false");
+}
+
+function setUnavailableState(error) {
+  console.error(error);
+  state.points = [];
+  state.matchedPoints = [];
+  state.drawablePoints = [];
+  statusElement.textContent =
+    "The publication map is temporarily unavailable. The dataset and provenance remain available.";
+  statusElement.classList.add("error");
+  statusElement.classList.remove("warning");
+  matchCount.textContent = "—";
+  matchLabel.textContent = "map unavailable";
+  retryLoadButton.hidden = false;
+  filterPanel.inert = true;
+  filterPanel.setAttribute("aria-busy", "false");
+  mapColumn.setAttribute("aria-busy", "false");
+  canvas.setAttribute("aria-disabled", "true");
+  emptyTitle.textContent = "The map could not be loaded.";
+  emptyCopy.textContent =
+    "Check your connection and try again. The full dataset is still available above.";
+  emptyState.hidden = false;
+  scheduleDraw();
+}
+
+function resetFilters() {
+  titleSearch.value = "";
+  state.activeTitleTerms.clear();
+  state.activeDepartments.clear();
+  state.activeFaculty.clear();
+  renderSelectedTitles();
+  authorFilter.renderSelected();
+  departmentFilter.renderSelected();
+}
 
 async function loadMap() {
+  setLoadingState();
   try {
-    const configResponse = await fetch("map-config.json", { cache: "no-cache" });
-    if (!configResponse.ok) throw new Error("Could not load map configuration");
-    const config = await configResponse.json();
+    if (!core || !context) {
+      throw new Error("Required browser map features are unavailable");
+    }
+    const config = core.parseConfig(
+      await fetchJson("map-config.json", "Map configuration"),
+    );
     if (config.heading) titleElement.textContent = config.heading;
     document.title = `${config.title} Map`;
-    const artifactPath = config.artifact_path || "maps/publications.json";
-    const artifactUrl =
-      config.artifact_url ||
-      `https://huggingface.co/datasets/${config.dataset_id}/resolve/${config.dataset_revision || "main"}/${artifactPath}`;
-    const artifactResponse = await fetch(artifactUrl, { cache: "no-cache" });
-    if (!artifactResponse.ok) {
-      throw new Error("Could not load the publication artifact");
-    }
-    const artifact = await artifactResponse.json();
-    if (
-      !Number.isInteger(artifact.schema_version) ||
-      artifact.schema_version < 4 ||
-      !Array.isArray(artifact.points) ||
-      !Array.isArray(artifact.layouts) ||
-      !Array.isArray(artifact.catalogs?.departments) ||
-      !Array.isArray(artifact.catalogs?.faculty)
-    ) {
-      throw new Error("The publication artifact has an unsupported schema");
-    }
+    const artifact = core.parseArtifact(
+      await fetchJson(core.artifactUrl(config), "Publication artifact"),
+    );
+
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
-    state.layouts = artifact.layouts.filter(
-      (layout) =>
-        layout &&
-        typeof layout.layout_id === "string" &&
-        typeof layout.label === "string" &&
-        typeof layout.method === "string" &&
-        typeof layout.description === "string" &&
-        typeof layout.x_field === "string" &&
-        typeof layout.y_field === "string",
-    );
+    state.layouts = artifact.layouts;
     state.layoutById = new Map(
       state.layouts.map((layout) => [layout.layout_id, layout]),
     );
     state.layoutId = artifact.default_layout_id;
-    if (
-      state.layouts.length < 2 ||
-      state.layoutById.size !== state.layouts.length ||
-      !state.layoutById.has(state.layoutId)
-    ) {
-      throw new Error("The publication artifact has invalid layout metadata");
-    }
     state.departmentById = new Map(
       state.departments.map((item) => [item.department_id, item]),
     );
     state.facultyById = new Map(
       state.faculty.map((item) => [item.person_id, item]),
     );
-    state.points = artifact.points
-      .map(preparePoint)
-      .filter(hasEveryLayout);
-    if (state.points.length !== artifact.points.length) {
-      throw new Error("The publication artifact has incomplete layout coordinates");
-    }
+    state.points = artifact.points.map(preparePoint);
+    state.omittedPointCount = artifact.omitted_point_count;
+    state.departmentColors = new Map();
+    state.facultyColors = new Map();
+    state.titleColors = new Map();
+    state.titlePalette = [];
+    state.selectedWorkId = "";
+    detailPanel.hidden = true;
+    if (artifact.warnings.length) console.warn(...artifact.warnings);
+
     populateLayouts();
     initializeFacultyColors();
     initializeDepartmentColors();
-    renderSelectedTitles();
-    authorFilter.renderSelected();
-    departmentFilter.renderSelected();
-    if (artifact.source_data_newest_at_utc) {
-      const updated = new Date(
-        artifact.source_data_newest_at_utc,
-      ).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-      state.sourceLabel = `newest Scholar profile refresh ${updated}`;
-    } else {
-      state.sourceLabel = "no verified Scholar profiles yet";
-    }
+    resetFilters();
+    const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
+    state.sourceLabel = updated
+      ? `newest Scholar profile refresh ${updated}`
+      : "no verified Scholar profile refresh date";
+    setReadyState();
     applyFilters();
     resizeCanvas();
     resetView();
   } catch (error) {
-    console.error(error);
-    statusElement.textContent =
-      "The publication map is temporarily unavailable. The dataset and provenance remain available.";
-    statusElement.classList.add("error");
-    matchCount.textContent = "—";
-    matchLabel.textContent = "map unavailable";
+    setUnavailableState(error);
   }
 }
 
+retryLoadButton.addEventListener("click", loadMap);
 loadMap();

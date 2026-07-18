@@ -20,14 +20,20 @@ resulting subset. Point size adapts to result density so full-corpus structure
 and sparse searches both remain legible. Search dimensions combine with AND;
 multiple values within a dimension combine with OR.
 
-Faculty color mode assigns every cataloged faculty member a unique color. The
-client generates the set at load time with deterministic farthest-point
-sampling in OKLab, restricted to bright, in-gamut colors with strong contrast
-against the map canvas. It does not cycle through a fixed categorical palette.
-The searchable color key only lists faculty represented in the current matches
-and can also be used to add or remove faculty filters. For a work connected to
-more than one faculty member, an actively selected faculty member takes color
-priority; otherwise the first cataloged faculty connection is used.
+Faculty and department color modes assign every cataloged entity a unique,
+stable color. The client generates each set at load time with deterministic
+farthest-point sampling in OKLab, restricted to bright, in-gamut colors with
+strong contrast against the map canvas. It does not cycle through a fixed
+categorical palette. Searchable color keys list the faculty or departments
+represented in the current matches and can also add or remove filters. For a
+work with multiple connections, an actively selected entity takes color
+priority; otherwise the first cataloged connection is used.
+
+Remote configuration and artifact data pass through a small, independently
+tested parser before reaching the UI. Unsafe links are discarded, structural
+schema errors produce a recoverable unavailable state, transient requests get
+one restrained retry, and isolated malformed publication rows are omitted with
+a visible warning instead of taking down the complete map.
 
 The canonical faculty registry, collection policy, normalized dataset schema,
 and artifact builder live in
@@ -48,3 +54,18 @@ python -m http.server 8000
 ```
 
 Then open <http://localhost:8000>.
+
+## Tests
+
+Install the pinned development dependencies and run the complete suite:
+
+```bash
+npm ci
+npx playwright install chromium
+npm test
+```
+
+The suite includes parser and color-generation checks plus browser coverage for
+filters, layouts, color keys, canvas controls, failure recovery, accessibility,
+responsive widths, and a production-sized 32,958-point artifact. GitHub Actions
+runs the same checks for every pull request and every push to `main`.

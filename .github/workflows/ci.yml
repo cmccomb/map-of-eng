@@ -15,17 +15,23 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Check out tested revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Check JavaScript syntax
-        run: node --check assets/colors.js && node --check assets/map.js
-      - name: Test perceptual color generation
-        run: node tests/colors.test.js
+        run: node --check assets/colors.js && node --check assets/map-core.js && node --check assets/map.js
       - name: Validate map configuration
-        run: node -e 'const config = require("./map-config.json"); if (!config.title || !config.dataset_id || config.artifact_path !== "maps/publications.json") process.exit(1)'
+        run: node -e 'require("./assets/map-core.js").parseConfig(require("./map-config.json"))'
       - name: Confirm static site files
-        run: test -s index.html && test -s assets/map.css && test -s assets/colors.js && test -s assets/map.js
+        run: test -s index.html && test -s assets/map.css && test -s assets/colors.js && test -s assets/map-core.js && test -s assets/map.js
+      - name: Install pinned test dependencies
+        run: npm ci
+      - name: Run core tests
+        run: npm run test:unit
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser tests
+        run: npm run test:e2e
