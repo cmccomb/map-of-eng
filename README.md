@@ -14,10 +14,17 @@ departments or faculty authors, search publication titles, choose between
 highlighting matches in context and showing matches alone, color comparisons by
 selected department or faculty author, and zoom to the resulting subset. Point
 size adapts to result density so full-corpus structure and sparse searches both
-remain legible. With no faculty selected, Faculty color mode shows the four most
-represented faculty in the current result set plus a neutral Other group.
-Selected faculty take priority. Search dimensions combine with AND; multiple
-values within a dimension combine with OR.
+remain legible. Search dimensions combine with AND; multiple values within a
+dimension combine with OR.
+
+Faculty color mode assigns every cataloged faculty member a unique color. The
+client generates the set at load time with deterministic farthest-point
+sampling in OKLab, restricted to bright, in-gamut colors with strong contrast
+against the map canvas. It does not cycle through a fixed categorical palette.
+The complete searchable color key can also be used to add or remove faculty
+filters. For a work connected to more than one faculty member, an actively
+selected faculty member takes color priority; otherwise the first cataloged
+faculty connection is used.
 
 The canonical faculty registry, collection policy, normalized dataset schema,
 and artifact builder live in
@@ -26,7 +33,7 @@ The former department-specific `map-of-*` repositories are archived; their
 views are now filters here.
 
 The Pages deployment stamps CSS and JavaScript URLs with the deployed commit so
-browsers cannot combine a new page with a cached client from an older release.
+browsers cannot combine a new page with cached assets from an older release.
 
 ## Local preview
 
