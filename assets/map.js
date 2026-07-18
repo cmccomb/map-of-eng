@@ -33,8 +33,6 @@ const state = {
   displayMode: "highlight",
   filtersActive: false,
   selectedWorkId: "",
-  suggestions: [],
-  suggestionIndex: -1,
   scale: 1,
   offsetX: 0,
   offsetY: 0,
@@ -59,7 +57,11 @@ const titleSearch = document.querySelector("#title-search");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
-const departmentOptions = document.querySelector("#department-options");
+const departmentSearch = document.querySelector("#department-search");
+const departmentSuggestions = document.querySelector(
+  "#department-suggestions",
+);
+const selectedDepartments = document.querySelector("#selected-departments");
 const clearFiltersButton = document.querySelector("#clear-filters");
 const zoomResultsButton = document.querySelector("#zoom-results");
 const resetViewButton = document.querySelector("#reset-view");
@@ -503,115 +505,183 @@ function applyFilters() {
   scheduleDraw();
 }
 
-function populateDepartments() {
-  departmentOptions.replaceChildren();
+function initializeDepartmentColors() {
   state.departments.forEach((department, index) => {
     state.departmentColors.set(
       department.department_id,
       DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length],
     );
-    const label = document.createElement("label");
-    label.className = "department-option";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.value = department.department_id;
-    const name = document.createElement("span");
-    name.textContent = department.title;
-    const count = document.createElement("span");
-    count.className = "department-count";
-    count.textContent = Number(department.publication_count || 0).toLocaleString();
-    label.append(input, name, count);
-    departmentOptions.append(label);
   });
 }
 
-function hideSuggestions() {
-  state.suggestions = [];
-  state.suggestionIndex = -1;
-  authorSuggestions.hidden = true;
-  authorSuggestions.replaceChildren();
-  authorSearch.setAttribute("aria-expanded", "false");
-  authorSearch.removeAttribute("aria-activedescendant");
-}
+function createMultiSelect({
+  input,
+  suggestionsList,
+  selectedList,
+  optionPrefix,
+  items,
+  activeIds,
+  itemId,
+  itemLabel,
+  itemCount,
+  showAllOnEmpty = false,
+  suggestionLimit = 8,
+}) {
+  let suggestions = [];
+  let suggestionIndex = -1;
 
-function renderSuggestions() {
-  const query = normalizedText(authorSearch.value);
-  if (!query) {
-    hideSuggestions();
-    return;
+  function hideSuggestions() {
+    suggestions = [];
+    suggestionIndex = -1;
+    suggestionsList.hidden = true;
+    suggestionsList.replaceChildren();
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
   }
-  state.suggestions = state.faculty
-    .filter(
-      (person) =>
-        !state.activeFaculty.has(person.person_id) &&
-        normalizedText(person.display_name).includes(query),
-    )
-    .sort((left, right) => {
-      const leftName = normalizedText(left.display_name);
-      const rightName = normalizedText(right.display_name);
-      const leftScore = leftName.startsWith(query) ? 0 : 1;
-      const rightScore = rightName.startsWith(query) ? 0 : 1;
-      return leftScore - rightScore || leftName.localeCompare(rightName);
-    })
-    .slice(0, 8);
-  if (!state.suggestions.length) {
-    hideSuggestions();
-    return;
-  }
-  state.suggestionIndex = 0;
-  authorSuggestions.replaceChildren();
-  state.suggestions.forEach((person, index) => {
-    const item = document.createElement("li");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.id = `author-option-${index}`;
-    button.setAttribute("role", "option");
-    button.setAttribute("aria-selected", String(index === state.suggestionIndex));
-    button.dataset.personId = person.person_id;
-    const name = document.createElement("span");
-    name.textContent = person.display_name;
-    const count = document.createElement("small");
-    count.textContent = `${Number(person.publication_count || 0).toLocaleString()} works`;
-    button.append(name, count);
-    item.append(button);
-    authorSuggestions.append(item);
-  });
-  authorSuggestions.hidden = false;
-  authorSearch.setAttribute("aria-expanded", "true");
-  authorSearch.setAttribute("aria-activedescendant", "author-option-0");
-}
 
-function updateSuggestionSelection() {
-  const buttons = authorSuggestions.querySelectorAll("button");
-  buttons.forEach((button, index) => {
-    button.setAttribute("aria-selected", String(index === state.suggestionIndex));
-  });
-  if (state.suggestionIndex >= 0) {
-    const activeId = `author-option-${state.suggestionIndex}`;
-    authorSearch.setAttribute("aria-activedescendant", activeId);
+  function updateSuggestionSelection() {
+    const buttons = suggestionsList.querySelectorAll("button");
+    buttons.forEach((button, index) => {
+      button.setAttribute("aria-selected", String(index === suggestionIndex));
+    });
+    if (suggestionIndex < 0) return;
+    const activeId = `${optionPrefix}-option-${suggestionIndex}`;
+    input.setAttribute("aria-activedescendant", activeId);
     document.querySelector(`#${activeId}`)?.scrollIntoView({ block: "nearest" });
   }
-}
 
-function renderSelectedAuthors() {
-  selectedAuthors.replaceChildren();
-  const people = state.faculty.filter((person) =>
-    state.activeFaculty.has(person.person_id),
-  );
-  for (const person of people) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "author-chip";
-    button.dataset.personId = person.person_id;
-    button.title = `Remove ${person.display_name}`;
-    const name = document.createElement("span");
-    name.textContent = person.display_name;
-    const close = document.createElement("i");
-    close.textContent = "×";
-    close.setAttribute("aria-hidden", "true");
-    button.append(name, close);
-    selectedAuthors.append(button);
+  function renderSuggestions() {
+    const query = normalizedText(input.value);
+    if (!query && !showAllOnEmpty) {
+      hideSuggestions();
+      return;
+    }
+    suggestions = items()
+      .filter(
+        (item) =>
+          !activeIds.has(itemId(item)) &&
+          normalizedText(itemLabel(item)).includes(query),
+      )
+      .sort((left, right) => {
+        if (!query) return 0;
+        const leftLabel = normalizedText(itemLabel(left));
+        const rightLabel = normalizedText(itemLabel(right));
+        const leftScore = leftLabel.startsWith(query) ? 0 : 1;
+        const rightScore = rightLabel.startsWith(query) ? 0 : 1;
+        return leftScore - rightScore || leftLabel.localeCompare(rightLabel);
+      })
+      .slice(0, suggestionLimit);
+    if (!suggestions.length) {
+      hideSuggestions();
+      return;
+    }
+
+    suggestionIndex = 0;
+    suggestionsList.replaceChildren();
+    suggestions.forEach((item, index) => {
+      const listItem = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.id = `${optionPrefix}-option-${index}`;
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(index === suggestionIndex));
+      button.dataset.itemId = itemId(item);
+      const name = document.createElement("span");
+      name.textContent = itemLabel(item);
+      const count = document.createElement("small");
+      count.textContent = `${Number(itemCount(item) || 0).toLocaleString()} works`;
+      button.append(name, count);
+      listItem.append(button);
+      suggestionsList.append(listItem);
+    });
+    suggestionsList.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    input.setAttribute("aria-activedescendant", `${optionPrefix}-option-0`);
   }
+
+  function renderSelected() {
+    selectedList.replaceChildren();
+    const selectedItems = items().filter((item) => activeIds.has(itemId(item)));
+    for (const item of selectedItems) {
+      const id = itemId(item);
+      const label = itemLabel(item);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "filter-chip";
+      button.dataset.itemId = id;
+      button.title = `Remove ${label}`;
+      button.setAttribute("aria-label", `Remove ${label}`);
+      const name = document.createElement("span");
+      name.textContent = label;
+      const close = document.createElement("i");
+      close.textContent = "×";
+      close.setAttribute("aria-hidden", "true");
+      button.append(name, close);
+      selectedList.append(button);
+    }
+  }
+
+  function addItem(id) {
+    if (!items().some((item) => itemId(item) === id)) return;
+    activeIds.add(id);
+    input.value = "";
+    hideSuggestions();
+    renderSelected();
+    applyFilters();
+    input.focus();
+  }
+
+  input.addEventListener("input", renderSuggestions);
+  input.addEventListener("focus", renderSuggestions);
+  input.addEventListener("blur", () => {
+    window.setTimeout(hideSuggestions, 120);
+  });
+  input.addEventListener("keydown", (event) => {
+    if (suggestionsList.hidden || !suggestions.length) return;
+    if (event.key === "ArrowDown") {
+      suggestionIndex = (suggestionIndex + 1) % suggestions.length;
+    } else if (event.key === "ArrowUp") {
+      suggestionIndex =
+        (suggestionIndex - 1 + suggestions.length) % suggestions.length;
+    } else if (event.key === "Enter") {
+      addItem(itemId(suggestions[suggestionIndex]));
+      event.preventDefault();
+      return;
+    } else if (event.key === "Escape") {
+      hideSuggestions();
+      return;
+    } else {
+      return;
+    }
+    event.preventDefault();
+    updateSuggestionSelection();
+  });
+
+  suggestionsList.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+  });
+  suggestionsList.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-item-id]");
+    if (button) addItem(button.dataset.itemId);
+  });
+
+  selectedList.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-item-id]");
+    if (!button) return;
+    activeIds.delete(button.dataset.itemId);
+    renderSelected();
+    applyFilters();
+  });
+
+  return {
+    clear() {
+      input.value = "";
+      activeIds.clear();
+      hideSuggestions();
+      renderSelected();
+    },
+    renderSelected,
+  };
 }
 
 function initializeFacultyColors() {
@@ -623,15 +693,31 @@ function initializeFacultyColors() {
   );
 }
 
-function addAuthor(personId) {
-  if (!state.facultyById.has(personId)) return;
-  state.activeFaculty.add(personId);
-  authorSearch.value = "";
-  hideSuggestions();
-  renderSelectedAuthors();
-  applyFilters();
-  authorSearch.focus();
-}
+const authorFilter = createMultiSelect({
+  input: authorSearch,
+  suggestionsList: authorSuggestions,
+  selectedList: selectedAuthors,
+  optionPrefix: "author",
+  items: () => state.faculty,
+  activeIds: state.activeFaculty,
+  itemId: (person) => person.person_id,
+  itemLabel: (person) => person.display_name,
+  itemCount: (person) => person.publication_count,
+});
+
+const departmentFilter = createMultiSelect({
+  input: departmentSearch,
+  suggestionsList: departmentSuggestions,
+  selectedList: selectedDepartments,
+  optionPrefix: "department",
+  items: () => state.departments,
+  activeIds: state.activeDepartments,
+  itemId: (department) => department.department_id,
+  itemLabel: (department) => department.title,
+  itemCount: (department) => department.publication_count,
+  showAllOnEmpty: true,
+  suggestionLimit: Number.POSITIVE_INFINITY,
+});
 
 function nearestPoint(clientX, clientY) {
   const bounds = canvas.getBoundingClientRect();
@@ -852,57 +938,6 @@ titleSearch.addEventListener("input", () => {
   state.titleTimer = window.setTimeout(applyFilters, 100);
 });
 
-authorSearch.addEventListener("input", renderSuggestions);
-authorSearch.addEventListener("focus", renderSuggestions);
-authorSearch.addEventListener("blur", () => {
-  window.setTimeout(hideSuggestions, 120);
-});
-authorSearch.addEventListener("keydown", (event) => {
-  if (authorSuggestions.hidden || !state.suggestions.length) return;
-  if (event.key === "ArrowDown") {
-    state.suggestionIndex =
-      (state.suggestionIndex + 1) % state.suggestions.length;
-  } else if (event.key === "ArrowUp") {
-    state.suggestionIndex =
-      (state.suggestionIndex - 1 + state.suggestions.length) %
-      state.suggestions.length;
-  } else if (event.key === "Enter") {
-    addAuthor(state.suggestions[state.suggestionIndex].person_id);
-    event.preventDefault();
-    return;
-  } else if (event.key === "Escape") {
-    hideSuggestions();
-    return;
-  } else {
-    return;
-  }
-  event.preventDefault();
-  updateSuggestionSelection();
-});
-
-authorSuggestions.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-});
-authorSuggestions.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-person-id]");
-  if (button) addAuthor(button.dataset.personId);
-});
-
-selectedAuthors.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-person-id]");
-  if (!button) return;
-  state.activeFaculty.delete(button.dataset.personId);
-  renderSelectedAuthors();
-  applyFilters();
-});
-
-departmentOptions.addEventListener("change", (event) => {
-  if (!event.target.matches('input[type="checkbox"]')) return;
-  if (event.target.checked) state.activeDepartments.add(event.target.value);
-  else state.activeDepartments.delete(event.target.value);
-  applyFilters();
-});
-
 document.querySelectorAll('input[name="display-mode"]').forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked) return;
@@ -936,7 +971,7 @@ facultyLegendList.addEventListener("click", (event) => {
   const { personId } = button.dataset;
   if (state.activeFaculty.has(personId)) state.activeFaculty.delete(personId);
   else state.activeFaculty.add(personId);
-  renderSelectedAuthors();
+  authorFilter.renderSelected();
   applyFilters();
   renderFacultyLegend();
 });
@@ -949,16 +984,8 @@ facultyLegendDialog.addEventListener("click", (event) => {
 
 clearFiltersButton.addEventListener("click", () => {
   titleSearch.value = "";
-  authorSearch.value = "";
-  state.activeDepartments.clear();
-  state.activeFaculty.clear();
-  departmentOptions
-    .querySelectorAll('input[type="checkbox"]')
-    .forEach((input) => {
-      input.checked = false;
-    });
-  hideSuggestions();
-  renderSelectedAuthors();
+  authorFilter.clear();
+  departmentFilter.clear();
   applyFilters();
   if (facultyLegendDialog.open) renderFacultyLegend();
 });
@@ -1011,8 +1038,9 @@ async function loadMap() {
       .map(preparePoint)
       .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
     initializeFacultyColors();
-    populateDepartments();
-    renderSelectedAuthors();
+    initializeDepartmentColors();
+    authorFilter.renderSelected();
+    departmentFilter.renderSelected();
     if (artifact.source_data_newest_at_utc) {
       const updated = new Date(
         artifact.source_data_newest_at_utc,

@@ -81,16 +81,37 @@
           ></ul>
           <div
             id="selected-authors"
-            class="selected-authors"
+            class="selected-filters"
             aria-label="Selected faculty authors"
           ></div>
         </div>
 
-        <fieldset class="department-fieldset">
-          <legend>Departments and programs</legend>
-          <p class="field-note">Select any number. Multiple selections match any.</p>
-          <div id="department-options" class="department-options"></div>
-        </fieldset>
+        <div class="department-field">
+          <label class="field" for="department-search">
+            <span>Departments and programs</span>
+            <input
+              id="department-search"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="department-suggestions"
+              aria-expanded="false"
+              autocomplete="off"
+              placeholder="Search departments"
+            >
+          </label>
+          <ul
+            id="department-suggestions"
+            class="suggestions"
+            role="listbox"
+            hidden
+          ></ul>
+          <div
+            id="selected-departments"
+            class="selected-filters"
+            aria-label="Selected departments and programs"
+          ></div>
+        </div>
 
         <fieldset class="color-fieldset">
           <legend>Color matches by</legend>
