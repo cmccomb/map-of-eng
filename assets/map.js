@@ -1188,7 +1188,8 @@ async function loadMap() {
     }
     const artifact = await artifactResponse.json();
     if (
-      artifact.schema_version !== 4 ||
+      !Number.isInteger(artifact.schema_version) ||
+      artifact.schema_version < 4 ||
       !Array.isArray(artifact.points) ||
       !Array.isArray(artifact.layouts) ||
       !Array.isArray(artifact.catalogs?.departments) ||
