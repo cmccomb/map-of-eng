@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; connect-src 'self' https://huggingface.co https://*.hf.co; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'"
     >
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#0a141e">
     <meta
       name="description"
@@ -15,6 +15,7 @@
     >
     <title>CMU Engineering Research</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <script src="assets/theme.js"></script>
     <link rel="stylesheet" href="assets/map.css">
     <script src="assets/colors.js" defer></script>
     <script src="assets/map-core.js" defer></script>
@@ -32,10 +33,27 @@
         <p id="map-status" class="status" role="status" aria-live="polite">
           Loading the publication landscape…
         </p>
-        <a
-          class="dataset-link"
-          href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
-        >Access the full dataset here.<span aria-hidden="true">↗</span></a>
+        <div class="source-actions">
+          <a
+            class="dataset-link"
+            href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
+          >Access the full dataset here.<span aria-hidden="true">↗</span></a>
+          <fieldset class="theme-control">
+            <legend class="sr-only">Appearance</legend>
+            <label>
+              <input type="radio" name="appearance-mode" value="light">
+              <span>Light</span>
+            </label>
+            <label>
+              <input type="radio" name="appearance-mode" value="system" checked>
+              <span>System</span>
+            </label>
+            <label>
+              <input type="radio" name="appearance-mode" value="dark">
+              <span>Dark</span>
+            </label>
+          </fieldset>
+        </div>
         <button id="retry-load" class="retry-button" type="button" hidden>
           Retry loading the map
         </button>
