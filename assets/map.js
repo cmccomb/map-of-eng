@@ -322,7 +322,7 @@ function updateStatus() {
     : total.toLocaleString();
   matchLabel.textContent = state.filtersActive
     ? "matching publications"
-    : "publications in one shared layout";
+    : "publications";
   const countLabel = state.filtersActive
     ? `${matched.toLocaleString()} of ${total.toLocaleString()} publications match`
     : `${total.toLocaleString()} publications`;
