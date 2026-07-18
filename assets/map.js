@@ -14,6 +14,10 @@ const DEPARTMENT_COLORS = [
   "#d5a6ff",
 ];
 
+const FACULTY_COLORS = ["#e89bff", "#ffbd68", "#78e4c3", "#ff8d7e"];
+const OTHER_FACULTY_COLOR = "#657789";
+const FACULTY_COLOR_LIMIT = FACULTY_COLORS.length;
+
 const state = {
   points: [],
   matchedPoints: [],
@@ -25,6 +29,8 @@ const state = {
   facultyById: new Map(),
   departmentColors: new Map(),
   facultyColors: new Map(),
+  facultyColorOrder: [],
+  facultyHasOther: false,
   activeDepartments: new Set(),
   activeFaculty: new Set(),
   colorMode: "department",
@@ -160,11 +166,12 @@ function drawBatch(screenPoints, radius, fillStyle, alpha) {
 }
 
 function colorFor(point) {
-  if (state.colorMode === "faculty" && state.activeFaculty.size) {
+  if (state.colorMode === "faculty") {
     const personId = point.faculty_ids.find((candidate) =>
-      state.activeFaculty.has(candidate),
+      state.facultyColors.has(candidate),
     );
     if (personId) return state.facultyColors.get(personId);
+    return OTHER_FACULTY_COLOR;
   }
   if (state.colorMode === "department" && state.activeDepartments.size) {
     const departmentId = point.department_ids.find((candidate) =>
@@ -329,12 +336,10 @@ function renderLegend() {
   mapLegend.replaceChildren();
   const activeGroups =
     state.colorMode === "faculty"
-      ? state.faculty
-          .filter((person) => state.activeFaculty.has(person.person_id))
-          .map((person) => ({
-            label: person.display_name,
-            color: state.facultyColors.get(person.person_id),
-          }))
+      ? state.facultyColorOrder.map((personId) => ({
+          label: state.facultyById.get(personId)?.display_name || "Faculty",
+          color: state.facultyColors.get(personId),
+        }))
       : state.departments
           .filter((department) =>
             state.activeDepartments.has(department.department_id),
@@ -350,8 +355,13 @@ function renderLegend() {
         group.color,
       );
     }
-    if (activeGroups.length > 4) {
+    if (state.colorMode === "department" && activeGroups.length > 4) {
       appendLegendItem(`+${activeGroups.length - 4} more`, "#9dabb9");
+    } else if (state.colorMode === "faculty" && state.facultyHasOther) {
+      appendLegendItem(
+        state.activeFaculty.size ? "Other selected faculty" : "Other faculty",
+        OTHER_FACULTY_COLOR,
+      );
     }
   } else {
     appendLegendItem(
@@ -382,6 +392,7 @@ function applyFilters() {
     state.filtersActive && state.displayMode === "show"
       ? state.matchedPoints
       : state.points;
+  refreshFacultyColors();
   if (
     state.selectedWorkId &&
     state.displayMode === "show" &&
@@ -507,22 +518,48 @@ function renderSelectedAuthors() {
   }
 }
 
+function rankFaculty(points) {
+  const counts = new Map();
+  for (const point of points) {
+    for (const personId of new Set(point.faculty_ids)) {
+      counts.set(personId, (counts.get(personId) || 0) + 1);
+    }
+  }
+  return [...counts]
+    .map(([personId, count]) => ({
+      person: state.facultyById.get(personId),
+      count,
+    }))
+    .filter((item) => item.person)
+    .sort(
+      (left, right) =>
+        right.count - left.count ||
+        left.person.display_name.localeCompare(right.person.display_name),
+    )
+    .map((item) => item.person);
+}
+
 function refreshFacultyColors() {
   state.facultyColors.clear();
-  state.faculty
-    .filter((person) => state.activeFaculty.has(person.person_id))
-    .forEach((person, index) => {
-      state.facultyColors.set(
-        person.person_id,
-        DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length],
-      );
-    });
+  const people = state.activeFaculty.size
+    ? state.faculty.filter((person) =>
+        state.activeFaculty.has(person.person_id),
+      )
+    : rankFaculty(state.matchedPoints);
+  const coloredPeople = people.slice(0, FACULTY_COLOR_LIMIT);
+  state.facultyColorOrder = coloredPeople.map((person) => person.person_id);
+  coloredPeople.forEach((person, index) => {
+    state.facultyColors.set(person.person_id, FACULTY_COLORS[index]);
+  });
+  state.facultyHasOther = state.matchedPoints.some(
+    (point) =>
+      !point.faculty_ids.some((personId) => state.facultyColors.has(personId)),
+  );
 }
 
 function addAuthor(personId) {
   if (!state.facultyById.has(personId)) return;
   state.activeFaculty.add(personId);
-  refreshFacultyColors();
   authorSearch.value = "";
   hideSuggestions();
   renderSelectedAuthors();
@@ -789,7 +826,6 @@ selectedAuthors.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-person-id]");
   if (!button) return;
   state.activeFaculty.delete(button.dataset.personId);
-  refreshFacultyColors();
   renderSelectedAuthors();
   applyFilters();
 });
@@ -813,6 +849,7 @@ document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked) return;
     state.colorMode = input.value;
+    refreshFacultyColors();
     renderLegend();
     scheduleDraw();
   });
@@ -823,7 +860,6 @@ clearFiltersButton.addEventListener("click", () => {
   authorSearch.value = "";
   state.activeDepartments.clear();
   state.activeFaculty.clear();
-  refreshFacultyColors();
   departmentOptions
     .querySelectorAll('input[type="checkbox"]')
     .forEach((input) => {

@@ -14,8 +14,10 @@ departments or faculty authors, search publication titles, choose between
 highlighting matches in context and showing matches alone, color comparisons by
 selected department or faculty author, and zoom to the resulting subset. Point
 size adapts to result density so full-corpus structure and sparse searches both
-remain legible. Search dimensions combine with AND; multiple values within a
-dimension combine with OR.
+remain legible. With no faculty selected, Faculty color mode shows the four most
+represented faculty in the current result set plus a neutral Other group.
+Selected faculty take priority. Search dimensions combine with AND; multiple
+values within a dimension combine with OR.
 
 The canonical faculty registry, collection policy, normalized dataset schema,
 and artifact builder live in
