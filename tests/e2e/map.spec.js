@@ -58,6 +58,48 @@ test("loads cleanly with useful defaults and a complete department key", async (
   expect(consoleErrors).toEqual([]);
 });
 
+test("uses the map as an edge-to-edge backdrop for floating controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openMap(page);
+
+  const layout = await page.evaluate(() => {
+    const bounds = (selector) => {
+      const rectangle = document.querySelector(selector).getBoundingClientRect();
+      return {
+        top: rectangle.top,
+        right: rectangle.right,
+        bottom: rectangle.bottom,
+        left: rectangle.left,
+        width: rectangle.width,
+        height: rectangle.height,
+      };
+    };
+    const mapColumn = document.querySelector(".map-column");
+    return {
+      canvas: bounds("#research-map"),
+      filters: bounds(".filter-panel"),
+      toolbar: bounds(".map-toolbar"),
+      mapBorderWidth: getComputedStyle(mapColumn).borderTopWidth,
+      bodyOverflow: getComputedStyle(document.body).overflow,
+    };
+  });
+
+  expect(layout.canvas).toMatchObject({
+    top: 0,
+    left: 0,
+    width: 1440,
+    height: 900,
+  });
+  expect(layout.mapBorderWidth).toBe("0px");
+  expect(layout.bodyOverflow).toBe("hidden");
+  expect(layout.filters.left).toBeGreaterThan(layout.canvas.left);
+  expect(layout.filters.bottom).toBeLessThan(layout.canvas.bottom);
+  expect(layout.toolbar.top).toBeGreaterThan(layout.canvas.top);
+  expect(layout.toolbar.right).toBeLessThan(layout.canvas.right);
+});
+
 test("title pills are normalized, deduplicated, ORed, and removable", async ({
   page,
 }) => {
