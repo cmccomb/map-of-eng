@@ -17,7 +17,11 @@ async function openMap(page, artifact = makeArtifact()) {
     "aria-busy",
     "false",
   );
-  await expect(page.locator("#match-count")).not.toHaveText("—");
+  await expect(page.locator("#map-status")).toContainText("publications");
+}
+
+async function expectPublicationStatus(page, count) {
+  await expect(page.locator("#map-status")).toContainText(count);
 }
 
 async function addTitleTerm(page, term) {
@@ -42,18 +46,38 @@ test("loads cleanly with useful defaults and a complete department key", async (
   });
   await openMap(page);
 
-  await expect(page.locator("#match-count")).toHaveText("8");
+  await expectPublicationStatus(page, "8 publications");
   await expect(page.locator("#map-status")).toContainText(
     "newest Scholar profile refresh Jul 17, 2026",
   );
   await expect(page.locator("#clear-filters")).toBeDisabled();
   await expect(page.locator("#zoom-results")).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "View 3 department colors" }),
-  ).toBeVisible();
+  await expect(page.locator("#legend-summary")).toHaveText(
+    "3 departments represented",
+  );
+  await expect(page.locator("#map-legend .color-key-item")).toHaveCount(3);
+  await expect(page.locator("#map-legend .color-key-item > span")).toHaveText([
+    "Biomedical Engineering",
+    "Electrical and Computer Engineering",
+    "Mechanical Engineering",
+  ]);
   await expect(page.locator("#research-map")).toHaveAttribute(
     "aria-label",
     /showing 8 publications/,
+  );
+  await expect(page.locator("#match-count, footer")).toHaveCount(0);
+  const contentOrder = await page
+    .locator(".filter-panel")
+    .evaluate((panel) =>
+      [
+        "#map-title",
+        "#map-status",
+        ".appearance-fieldset",
+        ".panel-heading",
+      ].map((selector) => panel.querySelector(selector).offsetTop),
+    );
+  expect(contentOrder).toEqual(
+    [...contentOrder].sort((left, right) => left - right),
   );
   expect(consoleErrors).toEqual([]);
 });
@@ -66,7 +90,9 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
 
   const layout = await page.evaluate(() => {
     const bounds = (selector) => {
-      const rectangle = document.querySelector(selector).getBoundingClientRect();
+      const rectangle = document
+        .querySelector(selector)
+        .getBoundingClientRect();
       return {
         top: rectangle.top,
         right: rectangle.right,
@@ -77,10 +103,13 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
       };
     };
     const mapColumn = document.querySelector(".map-column");
+    const legend = document.querySelector("#map-legend");
     return {
       canvas: bounds("#research-map"),
       filters: bounds(".filter-panel"),
-      toolbar: bounds(".map-toolbar"),
+      legend: bounds("#map-legend"),
+      legendColumns: getComputedStyle(legend).gridTemplateColumns,
+      legendOverflow: getComputedStyle(legend).overflowY,
       mapBorderWidth: getComputedStyle(mapColumn).borderTopWidth,
       bodyOverflow: getComputedStyle(document.body).overflow,
     };
@@ -96,8 +125,10 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
   expect(layout.bodyOverflow).toBe("hidden");
   expect(layout.filters.left).toBeGreaterThan(layout.canvas.left);
   expect(layout.filters.bottom).toBeLessThan(layout.canvas.bottom);
-  expect(layout.toolbar.top).toBeGreaterThan(layout.canvas.top);
-  expect(layout.toolbar.right).toBeLessThan(layout.canvas.right);
+  expect(layout.legend.left).toBeGreaterThan(layout.filters.left);
+  expect(layout.legend.right).toBeLessThanOrEqual(layout.filters.right);
+  expect(layout.legendColumns.split(" ")).toHaveLength(1);
+  expect(layout.legendOverflow).toBe("auto");
 });
 
 test("appearance control persists light, follows system, and redraws dark", async ({
@@ -117,7 +148,9 @@ test("appearance control persists light, follows system, and redraws dark", asyn
   await expect(root).toHaveAttribute("data-theme", "light");
   await expect(root).toHaveAttribute("data-resolved-theme", "light");
   await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("cmu-research-map-theme")))
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("cmu-research-map-theme")),
+    )
     .toBe("light");
   const lightImage = await canvas.screenshot();
   expect(lightImage.equals(systemDarkImage)).toBe(false);
@@ -146,17 +179,20 @@ test("title pills are normalized, deduplicated, ORed, and removable", async ({
 }) => {
   await openMap(page);
   await addTitleTerm(page, "robot");
-  await expect(page.locator("#match-count")).toHaveText("2 of 8");
+  await expectPublicationStatus(page, "2 of 8 publications match");
   await addTitleTerm(page, "battery");
-  await expect(page.locator("#match-count")).toHaveText("3 of 8");
+  await expectPublicationStatus(page, "3 of 8 publications match");
   await addTitleTerm(page, "  ROBOT  ");
   await expect(page.locator("#selected-titles .filter-chip")).toHaveCount(2);
 
-  await page.locator(".color-control").getByText("Title", { exact: true }).click();
+  await page
+    .locator(".color-control")
+    .getByText("Title", { exact: true })
+    .click();
   await expect(page.locator("#map-legend")).toContainText("robot");
   await expect(page.locator("#map-legend")).toContainText("battery");
   await page.getByRole("button", { name: "Remove title term robot" }).click();
-  await expect(page.locator("#match-count")).toHaveText("1 of 8");
+  await expectPublicationStatus(page, "1 of 8 publications match");
   await expect(page.locator("#clear-filters")).toBeEnabled();
 });
 
@@ -165,11 +201,11 @@ test("author and department comboboxes support keyboard OR/AND filtering", async
 }) => {
   await openMap(page);
   await chooseComboOption(page, "#author-search", "Alice");
-  await expect(page.locator("#match-count")).toHaveText("3 of 8");
+  await expectPublicationStatus(page, "3 of 8 publications match");
   await chooseComboOption(page, "#author-search", "Bob");
-  await expect(page.locator("#match-count")).toHaveText("5 of 8");
+  await expectPublicationStatus(page, "5 of 8 publications match");
   await chooseComboOption(page, "#department-search", "Electrical");
-  await expect(page.locator("#match-count")).toHaveText("2 of 8");
+  await expectPublicationStatus(page, "2 of 8 publications match");
 
   const authorInput = page.locator("#author-search");
   await authorInput.fill("Nobody Named This");
@@ -178,7 +214,7 @@ test("author and department comboboxes support keyboard OR/AND filtering", async
   await expect(page.locator("#author-suggestions")).toBeHidden();
 
   await page.getByRole("button", { name: "Remove Bob Brown" }).click();
-  await expect(page.locator("#match-count")).toHaveText("0 of 8");
+  await expectPublicationStatus(page, "0 of 8 publications match");
   await expect(page.locator("#empty-state")).toBeVisible();
   await expect(page.locator("#zoom-results")).toBeDisabled();
 });
@@ -190,46 +226,42 @@ test("department and faculty modes recolor the canvas and expose every represent
   const canvas = page.locator("#research-map");
   const departmentImage = await canvas.screenshot();
 
-  await page.getByRole("button", { name: "View 3 department colors" }).click();
-  await expect(page.locator("#color-key-dialog")).toBeVisible();
-  await expect(page.locator("#color-key-list button")).toHaveCount(3);
+  const legend = page.locator("#map-legend");
+  await expect(legend.locator(".color-key-item")).toHaveCount(3);
   const departmentColors = await page
-    .locator("#color-key-list .faculty-legend-item > i")
+    .locator("#map-legend .color-key-item > i")
     .evaluateAll((swatches) =>
       swatches.map((swatch) => getComputedStyle(swatch).backgroundColor),
     );
   expect(new Set(departmentColors).size).toBe(3);
-  await page
-    .locator("#color-key-list")
-    .getByRole("button", { name: /Biomedical Engineering/ })
-    .click();
+  await legend.getByRole("button", { name: /Biomedical Engineering/ }).click();
   await expect(page.locator("#selected-departments")).toContainText(
     "Biomedical Engineering",
   );
-  await expect(page.locator("#match-count")).toHaveText("2 of 8");
-  await page
-    .locator("#color-key-list")
-    .getByRole("button", { name: /Biomedical Engineering/ })
-    .click();
-  await expect(page.locator("#match-count")).toHaveText("8");
-  await page.locator("#close-color-key").click();
+  await expectPublicationStatus(page, "2 of 8 publications match");
+  await legend.getByRole("button", { name: /Biomedical Engineering/ }).click();
+  await expectPublicationStatus(page, "8 publications");
 
   await page
     .locator(".color-control")
     .getByText("Faculty", { exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "View 4 faculty colors" }),
-  ).toBeVisible();
+  await expect(page.locator("#legend-summary")).toHaveText(
+    "4 faculty members represented",
+  );
+  await expect(legend.locator(".color-key-item")).toHaveCount(4);
+  await expect(legend.locator(".color-key-item > span")).toHaveText([
+    "Alice Adams",
+    "Bob Brown",
+    "Carol Chen",
+    "Dan Diaz",
+  ]);
   const facultyImage = await canvas.screenshot();
   expect(facultyImage.equals(departmentImage)).toBe(false);
 
-  await page.getByRole("button", { name: "View 4 faculty colors" }).click();
-  await page.locator("#color-key-search").fill("Dan");
-  await expect(page.locator("#color-key-list button")).toHaveCount(1);
-  await page.getByRole("button", { name: /Dan Diaz/ }).click();
+  await legend.getByRole("button", { name: /Dan Diaz/ }).click();
   await expect(page.locator("#selected-authors")).toContainText("Dan Diaz");
-  await expect(page.locator("#match-count")).toHaveText("1 of 8");
+  await expectPublicationStatus(page, "1 of 8 publications match");
   await expect(page.locator("#map-legend")).toContainText("Dan Diaz");
 });
 
@@ -257,7 +289,7 @@ test("year and citation modes use stable ordered scales and recolor the map", as
   expect(yearImage.equals(departmentImage)).toBe(false);
 
   await chooseComboOption(page, "#author-search", "Alice");
-  await expect(page.locator("#match-count")).toHaveText("3 of 8");
+  await expectPublicationStatus(page, "3 of 8 publications match");
   await expect(yearLegend).toContainText("2018");
   await expect(yearLegend).toContainText("2025");
   await page.locator("#clear-filters").click();
@@ -349,7 +381,7 @@ test("display, zoom, reset, clear, and canvas keyboard controls stay coherent", 
   await page.getByText("Show matches only", { exact: true }).click();
   await expect(page.locator("#zoom-results")).toBeDisabled();
   await page.locator("#clear-filters").click();
-  await expect(page.locator("#match-count")).toHaveText("8");
+  await expectPublicationStatus(page, "8 publications");
   await expect(page.locator("#empty-state")).toBeHidden();
   await expect(page.locator("#clear-filters")).toBeDisabled();
 
@@ -368,15 +400,18 @@ test("display, zoom, reset, clear, and canvas keyboard controls stay coherent", 
   await expect(page.locator("#detail-panel")).toBeHidden();
 });
 
-test("a transient artifact failure recovers automatically", async ({ page }) => {
+test("a transient artifact failure recovers automatically", async ({
+  page,
+}) => {
   let requests = 0;
   await page.route("https://huggingface.co/**", async (route) => {
     requests += 1;
-    if (requests === 1) await route.fulfill({ status: 503, body: "Unavailable" });
+    if (requests === 1)
+      await route.fulfill({ status: 503, body: "Unavailable" });
     else await route.fulfill({ json: makeArtifact() });
   });
   await page.goto("/");
-  await expect(page.locator("#match-count")).toHaveText("8");
+  await expectPublicationStatus(page, "8 publications");
   expect(requests).toBe(2);
   await expect(page.locator("#retry-load")).toBeHidden();
 });
@@ -387,7 +422,8 @@ test("persistent failures show a retry path and a later retry restores the map",
   let requests = 0;
   await page.route("https://huggingface.co/**", async (route) => {
     requests += 1;
-    if (requests <= 2) await route.fulfill({ status: 503, body: "Unavailable" });
+    if (requests <= 2)
+      await route.fulfill({ status: 503, body: "Unavailable" });
     else await route.fulfill({ json: makeArtifact() });
   });
   await page.goto("/");
@@ -396,7 +432,7 @@ test("persistent failures show a retry path and a later retry restores the map",
     "The map could not be loaded.",
   );
   await page.locator("#retry-load").click();
-  await expect(page.locator("#match-count")).toHaveText("8");
+  await expectPublicationStatus(page, "8 publications");
   await expect(page.locator("#retry-load")).toBeHidden();
 });
 
@@ -411,24 +447,32 @@ test("one malformed row is omitted without taking down valid publications", asyn
   });
   artifact.point_count = artifact.points.length;
   await openMap(page, artifact);
-  await expect(page.locator("#match-count")).toHaveText("8");
+  await expectPublicationStatus(page, "8 publications");
   await expect(page.locator("#map-status")).toContainText(
     "1 invalid record omitted",
   );
   await expect(page.locator("#map-status")).toHaveClass(/warning/);
 });
 
-test("fatal schema failures keep controls inert and offer retry", async ({ page }) => {
+test("fatal schema failures keep controls inert and offer retry", async ({
+  page,
+}) => {
   const artifact = makeArtifact();
   artifact.schema_version = 3;
   await serveArtifact(page, artifact);
   await page.goto("/");
   await expect(page.locator("#retry-load")).toBeVisible();
-  await expect(page.locator(".filter-panel")).toHaveAttribute("inert", "");
-  await expect(page.locator("#match-label")).toHaveText("map unavailable");
+  await expect(page.locator(".filter-controls")).toHaveAttribute("inert", "");
+  await expect(page.locator("#map-status")).toHaveText(
+    "The publication map is temporarily unavailable. The dataset and provenance remain available.",
+  );
+  await expect(page.locator(".dataset-link")).toBeEnabled();
+  await expect(page.getByLabel("System", { exact: true })).toBeEnabled();
 });
 
-test("the interface has no serious accessibility violations", async ({ page }) => {
+test("the interface has no serious accessibility violations", async ({
+  page,
+}) => {
   await openMap(page);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
@@ -451,7 +495,9 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openMap(page);
     const measurements = await page.evaluate(() => ({
-      canvasHeight: document.querySelector("#research-map").getBoundingClientRect().height,
+      canvasHeight: document
+        .querySelector("#research-map")
+        .getBoundingClientRect().height,
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
     }));
@@ -459,7 +505,7 @@ for (const viewport of [
       measurements.viewportWidth,
     );
     expect(measurements.canvasHeight).toBeGreaterThan(300);
-    await expect(page.locator(".map-toolbar")).toBeVisible();
+    await expect(page.locator("#map-legend")).toBeVisible();
     await expect(page.locator("#clear-filters")).toBeVisible();
   });
 }
@@ -471,8 +517,8 @@ test("renders and filters a production-sized 32,958-point artifact", async ({
   const started = Date.now();
   await openMap(page, makeLargeArtifact());
   const elapsed = Date.now() - started;
-  await expect(page.locator("#match-count")).toHaveText("32,958");
+  await expectPublicationStatus(page, "32,958 publications");
   await addTitleTerm(page, "robot");
-  await expect(page.locator("#match-count")).toHaveText(/of 32,958/);
+  await expectPublicationStatus(page, "of 32,958 publications match");
   expect(elapsed).toBeLessThan(15000);
 });

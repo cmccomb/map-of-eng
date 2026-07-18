@@ -90,6 +90,7 @@ const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
 const filterPanel = document.querySelector(".filter-panel");
+const filterControls = document.querySelector(".filter-controls");
 const mapColumn = document.querySelector(".map-column");
 const tooltip = document.querySelector("#tooltip");
 const titleSearch = document.querySelector("#title-search");
@@ -98,18 +99,15 @@ const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
 const departmentSearch = document.querySelector("#department-search");
-const departmentSuggestions = document.querySelector(
-  "#department-suggestions",
-);
+const departmentSuggestions = document.querySelector("#department-suggestions");
 const selectedDepartments = document.querySelector("#selected-departments");
 const layoutOptions = document.querySelector("#layout-options");
 const layoutNote = document.querySelector("#layout-note");
 const clearFiltersButton = document.querySelector("#clear-filters");
 const zoomResultsButton = document.querySelector("#zoom-results");
 const resetViewButton = document.querySelector("#reset-view");
-const matchCount = document.querySelector("#match-count");
-const matchLabel = document.querySelector("#match-label");
 const mapLegend = document.querySelector("#map-legend");
+const legendSummary = document.querySelector("#legend-summary");
 const emptyState = document.querySelector("#empty-state");
 const emptyTitle = document.querySelector("#empty-title");
 const emptyCopy = document.querySelector("#empty-copy");
@@ -121,15 +119,6 @@ const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
 const detailLink = document.querySelector("#detail-link");
 const closeDetail = document.querySelector("#close-detail");
-const colorKeyDialog = document.querySelector("#color-key-dialog");
-const colorKeyKicker = document.querySelector("#color-key-kicker");
-const colorKeyTitle = document.querySelector("#color-key-title");
-const colorKeySearch = document.querySelector("#color-key-search");
-const colorKeySearchLabel = document.querySelector("#color-key-search-label");
-const colorKeyCount = document.querySelector("#color-key-count");
-const colorKeyList = document.querySelector("#color-key-list");
-const closeColorKey = document.querySelector("#close-color-key");
-let colorKeyMode = "faculty";
 
 function normalizedText(value) {
   return core.normalizedText(value);
@@ -342,13 +331,7 @@ function drawMatched(screenPoints) {
     context.beginPath();
     for (const screenPoint of screenPoints) {
       context.moveTo(screenPoint.x + radius + 0.75, screenPoint.y);
-      context.arc(
-        screenPoint.x,
-        screenPoint.y,
-        radius + 0.75,
-        0,
-        Math.PI * 2,
-      );
+      context.arc(screenPoint.x, screenPoint.y, radius + 0.75, 0, Math.PI * 2);
     }
     context.stroke();
     context.restore();
@@ -425,12 +408,6 @@ function scheduleDraw() {
 function updateStatus() {
   const total = state.points.length;
   const matched = state.matchedPoints.length;
-  matchCount.textContent = state.filtersActive
-    ? `${matched.toLocaleString()} of ${total.toLocaleString()}`
-    : total.toLocaleString();
-  matchLabel.textContent = state.filtersActive
-    ? "matching publications"
-    : "publications";
   const countLabel = state.filtersActive
     ? `${matched.toLocaleString()} of ${total.toLocaleString()} publications match`
     : `${total.toLocaleString()} publications`;
@@ -534,9 +511,7 @@ function renderYearLegend() {
         ? `All dated publications are from ${minimum}`
         : `Publication year color scale from ${minimum}${
             state.yearRange.clippedMinimum ? " and earlier" : ""
-          } to ${maximum}${
-            state.yearRange.clippedMaximum ? " and later" : ""
-          }`,
+          } to ${maximum}${state.yearRange.clippedMaximum ? " and later" : ""}`,
   });
   if (state.matchedPoints.some((point) => !Number.isInteger(point.year))) {
     appendLegendItem(
@@ -554,9 +529,7 @@ function renderCitationLegend() {
     : compactNumber(maximum);
   appendContinuousLegend({
     title: "Citations · log scale",
-    labels: maximum
-      ? ["0", compactNumber(midpoint), maximumLabel]
-      : ["0"],
+    labels: maximum ? ["0", compactNumber(midpoint), maximumLabel] : ["0"],
     palette: state.citationPalette,
     accessibleLabel: `Citation count color scale from 0 to ${maximum.toLocaleString()}${
       state.citationMaximumClipped ? " and higher" : ""
@@ -586,53 +559,52 @@ function colorKeyItems(mode = state.colorMode) {
       color: colors.get(item[idField]),
       count: counts.get(item[idField]),
       selected: activeIds.has(item[idField]),
-    }));
+    }))
+    .sort((left, right) =>
+      left.label.localeCompare(right.label, "en", { sensitivity: "base" }),
+    );
 }
 
-function appendColorKeyButton(items, mode) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "faculty-legend-button";
-  button.dataset.action = "open-color-key";
-  button.dataset.colorMode = mode;
-  button.setAttribute("aria-haspopup", "dialog");
-  const spectrum = document.createElement("span");
-  spectrum.className = "legend-spectrum";
-  spectrum.setAttribute("aria-hidden", "true");
-  const colorCount = items.length;
-  const swatchCount = Math.min(10, colorCount);
-  for (let index = 0; index < swatchCount; index += 1) {
+function appendColorKeyItems(items, mode) {
+  const facultyMode = mode === "faculty";
+  const singular = facultyMode ? "faculty member" : "department";
+  const plural = facultyMode ? "faculty members" : "departments";
+  legendSummary.textContent = `${items.length.toLocaleString()} ${
+    items.length === 1 ? singular : plural
+  } represented`;
+
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "color-key-item";
+    button.dataset.itemId = item.id;
+    button.dataset.colorMode = mode;
+    button.setAttribute("aria-pressed", String(item.selected));
     const swatch = document.createElement("i");
-    const paletteIndex = Math.floor((index * colorCount) / swatchCount);
-    swatch.style.backgroundColor = items[paletteIndex].color;
-    spectrum.append(swatch);
+    swatch.style.backgroundColor = item.color;
+    swatch.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.textContent = item.label;
+    const count = document.createElement("small");
+    count.textContent = `${item.count.toLocaleString()} match${
+      item.count === 1 ? "" : "es"
+    }`;
+    button.append(swatch, name, count);
+    mapLegend.append(button);
   }
-  const label = document.createElement("span");
-  label.textContent = `View ${colorCount.toLocaleString()} ${
-    mode === "faculty" ? "faculty" : "department"
-  } colors`;
-  button.append(spectrum, label);
-  mapLegend.append(button);
 }
 
 function renderLegend() {
   mapLegend.replaceChildren();
+  legendSummary.textContent = "";
   if (state.colorMode === "year") {
+    legendSummary.textContent = "Publications by year";
     renderYearLegend();
   } else if (state.colorMode === "citations") {
+    legendSummary.textContent = "Publications by citation count";
     renderCitationLegend();
   } else if (state.colorMode === "faculty") {
     const items = colorKeyItems("faculty");
-    const selectedItems = items.filter((item) => item.selected);
-    for (const item of selectedItems.slice(0, 3)) {
-      appendLegendItem(item.label, item.color);
-    }
-    if (selectedItems.length > 3) {
-      appendLegendItem(
-        `+${selectedItems.length - 3} selected`,
-        themeColor("--quiet", "#9dabb9"),
-      );
-    }
     const hasUnmappedMatches = state.matchedPoints.some(
       (point) =>
         !point.faculty_ids.some((personId) =>
@@ -640,7 +612,7 @@ function renderLegend() {
         ),
     );
     if (items.length) {
-      appendColorKeyButton(items, "faculty");
+      appendColorKeyItems(items, "faculty");
       if (hasUnmappedMatches) {
         appendLegendItem(
           "No mapped faculty",
@@ -648,6 +620,7 @@ function renderLegend() {
         );
       }
     } else if (state.matchedPoints.length && hasUnmappedMatches) {
+      legendSummary.textContent = "No mapped faculty";
       appendLegendItem(
         "No mapped faculty",
         themeColor("--canvas-unassigned", "#657789"),
@@ -657,23 +630,26 @@ function renderLegend() {
         "No faculty matches",
         themeColor("--canvas-unassigned", "#657789"),
       );
+      legendSummary.textContent = "No faculty represented";
     }
   } else if (state.colorMode === "title") {
-    const activeTerms = [...state.activeTitleTerms].map(([query, label]) => ({
-      label,
-      color: state.titleColors.get(query),
-    }));
+    const activeTerms = [...state.activeTitleTerms]
+      .map(([query, label]) => ({
+        label,
+        color: state.titleColors.get(query),
+      }))
+      .sort((left, right) =>
+        left.label.localeCompare(right.label, "en", { sensitivity: "base" }),
+      );
     if (activeTerms.length) {
-      for (const term of activeTerms.slice(0, 4)) {
+      legendSummary.textContent = `${activeTerms.length.toLocaleString()} title ${
+        activeTerms.length === 1 ? "term" : "terms"
+      }`;
+      for (const term of activeTerms) {
         appendLegendItem(term.label, term.color);
       }
-      if (activeTerms.length > 4) {
-        appendLegendItem(
-          `+${activeTerms.length - 4} more`,
-          themeColor("--quiet", "#9dabb9"),
-        );
-      }
     } else {
+      legendSummary.textContent = "Publications";
       appendLegendItem(
         state.filtersActive ? "Match" : "Publication",
         colorFor({ _title: "", department_ids: [], faculty_ids: [] }),
@@ -681,25 +657,14 @@ function renderLegend() {
     }
   } else if (state.colorMode === "department") {
     const items = colorKeyItems("department");
-    const selectedItems = items.filter((item) => item.selected);
-    if (selectedItems.length) {
-      for (const item of selectedItems.slice(0, 4)) {
-        appendLegendItem(item.label, item.color);
-      }
-      if (selectedItems.length > 4) {
-        appendLegendItem(
-          `+${selectedItems.length - 4} more`,
-          themeColor("--quiet", "#9dabb9"),
-        );
-      }
-    }
     if (items.length) {
-      appendColorKeyButton(items, "department");
+      appendColorKeyItems(items, "department");
     } else {
       appendLegendItem(
         "No department matches",
         themeColor("--canvas-unassigned", "#657789"),
       );
+      legendSummary.textContent = "No departments represented";
     }
   }
   if (state.filtersActive && state.displayMode === "highlight") {
@@ -711,68 +676,12 @@ function renderLegend() {
   }
 }
 
-function renderColorKey() {
-  const query = normalizedText(colorKeySearch.value);
-  const allItems = colorKeyItems(colorKeyMode);
-  const items = allItems.filter((item) =>
-    normalizedText(item.label).includes(query),
-  );
-  const noun = colorKeyMode === "faculty" ? "faculty" : "departments";
-  colorKeyCount.textContent = query
-    ? `${items.length.toLocaleString()} of ${allItems.length.toLocaleString()} ${noun} with matches`
-    : `${allItems.length.toLocaleString()} ${noun} with matches · select any name to filter the map`;
-  colorKeyList.replaceChildren();
-  for (const item of items) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "faculty-legend-item";
-    button.dataset.itemId = item.id;
-    button.setAttribute("aria-pressed", String(item.selected));
-    const swatch = document.createElement("i");
-    swatch.style.backgroundColor = item.color;
-    swatch.setAttribute("aria-hidden", "true");
-    const name = document.createElement("span");
-    name.textContent = item.label;
-    const count = document.createElement("small");
-    count.textContent = `${item.count.toLocaleString()} match${item.count === 1 ? "" : "es"}`;
-    button.append(swatch, name, count);
-    colorKeyList.append(button);
-  }
-  if (!items.length) {
-    const message = document.createElement("p");
-    message.className = "color-key-empty";
-    message.textContent = "No colors match that search.";
-    colorKeyList.append(message);
-  }
-}
-
-function openColorKey(mode) {
-  colorKeyMode = mode === "department" ? "department" : "faculty";
-  const facultyMode = colorKeyMode === "faculty";
-  colorKeyKicker.textContent = facultyMode
-    ? "Faculty color key"
-    : "Department color key";
-  colorKeyTitle.textContent = facultyMode
-    ? "Faculty represented in matches"
-    : "Departments represented in matches";
-  colorKeySearchLabel.textContent = facultyMode
-    ? "Find a faculty member"
-    : "Find a department";
-  colorKeySearch.placeholder = facultyMode
-    ? "Search faculty names"
-    : "Search department names";
-  colorKeySearch.value = "";
-  renderColorKey();
-  colorKeyDialog.showModal();
-  colorKeySearch.focus();
-}
-
 function applyFilters() {
   const titleQueries = [...state.activeTitleTerms.keys()];
   state.filtersActive = Boolean(
     state.activeTitleTerms.size ||
-      state.activeDepartments.size ||
-      state.activeFaculty.size,
+    state.activeDepartments.size ||
+    state.activeFaculty.size,
   );
   state.matchedPoints = state.points.filter((point) =>
     core.pointMatches(point, {
@@ -781,9 +690,7 @@ function applyFilters() {
       facultyIds: state.activeFaculty,
     }),
   );
-  const matchedIds = new Set(
-    state.matchedPoints.map((point) => point.work_id),
-  );
+  const matchedIds = new Set(state.matchedPoints.map((point) => point.work_id));
   for (const point of state.points) {
     point._matched = matchedIds.has(point.work_id);
   }
@@ -802,7 +709,6 @@ function applyFilters() {
   tooltip.hidden = true;
   updateStatus();
   renderLegend();
-  if (colorKeyDialog.open) renderColorKey();
   scheduleDraw();
 }
 
@@ -860,8 +766,7 @@ function initializeSequentialColors() {
       ? citations[Math.floor((citations.length - 1) * 0.99)]
       : actualCitationMaximum;
   state.citationMaximum = robustCitationMaximum || actualCitationMaximum;
-  state.citationMaximumClipped =
-    actualCitationMaximum > state.citationMaximum;
+  state.citationMaximumClipped = actualCitationMaximum > state.citationMaximum;
 }
 
 function createMultiSelect({
@@ -898,7 +803,9 @@ function createMultiSelect({
     if (suggestionIndex < 0) return;
     const activeId = `${optionPrefix}-option-${suggestionIndex}`;
     input.setAttribute("aria-activedescendant", activeId);
-    document.querySelector(`#${activeId}`)?.scrollIntoView({ block: "nearest" });
+    document
+      .querySelector(`#${activeId}`)
+      ?.scrollIntoView({ block: "nearest" });
   }
 
   function renderSuggestions() {
@@ -1069,7 +976,6 @@ function refreshThemeColors() {
     initializeSequentialColors();
     for (const query of state.activeTitleTerms.keys()) ensureTitleColor(query);
     renderLegend();
-    if (colorKeyDialog.open) renderColorKey();
   }
   tooltip.hidden = true;
   scheduleDraw();
@@ -1394,38 +1300,22 @@ document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
   input.addEventListener("change", () => {
     if (!input.checked) return;
     state.colorMode = input.value;
-    if (colorKeyDialog.open) colorKeyDialog.close();
     renderLegend();
     scheduleDraw();
   });
 });
 
 mapLegend.addEventListener("click", (event) => {
-  const button = event.target.closest('[data-action="open-color-key"]');
-  if (button) openColorKey(button.dataset.colorMode);
-});
-
-colorKeySearch.addEventListener("input", renderColorKey);
-colorKeyList.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-item-id]");
+  const button = event.target.closest("button[data-item-id][data-color-mode]");
   if (!button) return;
-  const { itemId } = button.dataset;
+  const { itemId, colorMode } = button.dataset;
   const activeIds =
-    colorKeyMode === "faculty"
-      ? state.activeFaculty
-      : state.activeDepartments;
+    colorMode === "faculty" ? state.activeFaculty : state.activeDepartments;
   if (activeIds.has(itemId)) activeIds.delete(itemId);
   else activeIds.add(itemId);
-  if (colorKeyMode === "faculty") authorFilter.renderSelected();
+  if (colorMode === "faculty") authorFilter.renderSelected();
   else departmentFilter.renderSelected();
   applyFilters();
-  renderColorKey();
-});
-closeColorKey.addEventListener("click", () => {
-  colorKeyDialog.close();
-});
-colorKeyDialog.addEventListener("click", (event) => {
-  if (event.target === colorKeyDialog) colorKeyDialog.close();
 });
 
 clearFiltersButton.addEventListener("click", () => {
@@ -1435,7 +1325,6 @@ clearFiltersButton.addEventListener("click", () => {
   authorFilter.clear();
   departmentFilter.clear();
   applyFilters();
-  if (colorKeyDialog.open) renderColorKey();
 });
 
 zoomResultsButton.addEventListener("click", () => {
@@ -1480,7 +1369,9 @@ async function fetchJson(url, label, { attempts = 2, timeout = 15000 } = {}) {
       try {
         return await response.json();
       } catch (error) {
-        throw new Error(`${label} did not contain valid JSON`, { cause: error });
+        throw new Error(`${label} did not contain valid JSON`, {
+          cause: error,
+        });
       }
     } catch (error) {
       lastError = error;
@@ -1501,7 +1392,7 @@ function setLoadingState() {
   statusElement.textContent = "Loading the publication landscape…";
   statusElement.classList.remove("error", "warning");
   retryLoadButton.hidden = true;
-  filterPanel.inert = true;
+  filterControls.inert = true;
   filterPanel.setAttribute("aria-busy", "true");
   mapColumn.setAttribute("aria-busy", "true");
   canvas.removeAttribute("aria-disabled");
@@ -1510,7 +1401,7 @@ function setLoadingState() {
 
 function setReadyState() {
   retryLoadButton.hidden = true;
-  filterPanel.inert = false;
+  filterControls.inert = false;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
 }
@@ -1524,10 +1415,8 @@ function setUnavailableState(error) {
     "The publication map is temporarily unavailable. The dataset and provenance remain available.";
   statusElement.classList.add("error");
   statusElement.classList.remove("warning");
-  matchCount.textContent = "—";
-  matchLabel.textContent = "map unavailable";
   retryLoadButton.hidden = false;
-  filterPanel.inert = true;
+  filterControls.inert = true;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
   canvas.setAttribute("aria-disabled", "true");
