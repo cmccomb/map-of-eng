@@ -73,3 +73,8 @@ assert.notDeepEqual(
   generateSequentialPalette(48, "dark", "year"),
   generateSequentialPalette(48, "dark", "citations"),
 );
+
+assert.deepEqual(generatePerceptualPalette(-1), []);
+assert.deepEqual(generateSequentialPalette(0), []);
+assert.equal(generateSequentialPalette(1, "unknown", "unknown").length, 1);
+assert.throws(() => generatePerceptualPalette(1_000_000), RangeError);
