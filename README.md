@@ -102,5 +102,7 @@ npm test
 The suite includes parser and color-generation checks plus browser coverage for
 filters, layouts, topical keywords, dot sizing, color keys, canvas controls,
 failure recovery, accessibility, responsive widths, and a production-sized
-artifact with more than 30,000 points. GitHub Actions runs the same checks for every pull
-request and every push to `main`.
+artifact with more than 30,000 points. GitHub Actions runs the same checks for
+every pull request and every push to `main`. Pure client logic must maintain at
+least 99% line, 97% branch, and 100% function coverage; browser tests exercise
+the DOM and canvas integration around it.

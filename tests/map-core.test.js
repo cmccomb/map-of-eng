@@ -34,6 +34,26 @@ test("configuration parsing accepts a safe same-origin artifact path", () => {
   assert.equal(config.default_layout_id, "tsne");
 });
 
+test("configuration parsing supports absolute artifacts and dataset defaults", () => {
+  const direct = core.parseConfig({
+    title: " Research ",
+    heading: " Map ",
+    artifact_url: "https://example.test/map data.json",
+  });
+  assert.deepEqual(direct, {
+    title: "Research",
+    heading: "Map",
+    default_layout_id: "",
+    artifact_url: "https://example.test/map%20data.json",
+    artifact_bytes: 0,
+  });
+  assert.equal(core.artifactUrl(direct), direct.artifact_url);
+
+  const defaults = core.parseConfig({ title: "Research", dataset_id: "cmu/map" });
+  assert.equal(defaults.dataset_revision, "main");
+  assert.equal(defaults.artifact_path, "maps/publications.json");
+});
+
 test("configuration parsing rejects unsafe URLs and paths", () => {
   assert.throws(
     () => core.parseConfig({ title: "Map", artifact_url: "javascript:alert(1)" }),
@@ -66,6 +86,31 @@ test("configuration parsing rejects unsafe URLs and paths", () => {
       }),
     core.ArtifactError,
   );
+
+  const invalidConfigurations = [
+    null,
+    { title: "", dataset_id: "owner/data" },
+    { title: "x".repeat(201), dataset_id: "owner/data" },
+    { title: "Map", dataset_id: "not-a-dataset" },
+    { title: "Map", dataset_id: "owner/data", artifact_path: "/map.json" },
+    { title: "Map", dataset_id: "owner/data", artifact_path: "maps\\map.json" },
+    { title: "Map", dataset_id: "owner/data", artifact_path: "maps//map.json" },
+  ];
+  for (const invalid of invalidConfigurations) {
+    assert.throws(() => core.parseConfig(invalid), core.ArtifactError);
+  }
+});
+
+test("text and URL helpers normalize untrusted values", () => {
+  assert.equal(core.normalizedText("  CAFE\u0301  "), "café");
+  assert.equal(core.normalizedText(null), "");
+  assert.equal(
+    core.safeHttpUrl("https://example.test/a b"),
+    "https://example.test/a%20b",
+  );
+  assert.equal(core.safeHttpUrl("mailto:test@example.test"), "");
+  assert.equal(core.safeHttpUrl("not a URL"), "");
+  assert.equal(core.safeHttpUrl(null), "");
 });
 
 test("artifact parser accepts additive fields and sanitizes publication links", () => {
@@ -110,6 +155,176 @@ test("structural catalog and layout defects remain fatal", () => {
   assert.throws(() => core.parseArtifact(missingLayout), /At least two map layouts/);
 });
 
+test("artifact parser rejects malformed top-level structure", () => {
+  const cases = [
+    [null, /Artifact must be an object/],
+    [{}, /unsupported schema/],
+    [{ schema_version: 4 }, /Artifact points/],
+    [{ schema_version: 4, points: [] }, /catalogs are missing/],
+  ];
+  for (const [value, message] of cases) {
+    assert.throws(() => core.parseArtifact(value), message);
+  }
+});
+
+test("artifact parser validates every layout invariant", () => {
+  const mutations = [
+    [
+      (artifact) => artifact.layouts.push(...Array(7).fill(artifact.layouts[0])),
+      /At most 8/,
+    ],
+    [
+      (artifact) => {
+        artifact.layouts[0] = null;
+      },
+      /layouts\[0\] must be an object/,
+    ],
+    [
+      (artifact) => {
+        artifact.layouts[1].layout_id = "pca";
+      },
+      /Duplicate layout id/,
+    ],
+    [
+      (artifact) => {
+        artifact.layouts[0].x_field = "not-valid!";
+      },
+      /invalid coordinate fields/,
+    ],
+    [
+      (artifact) => {
+        artifact.layouts[0].y_field = "pca_x";
+      },
+      /invalid coordinate fields/,
+    ],
+    [
+      (artifact) => {
+        artifact.default_layout_id = "missing";
+      },
+      /default layout/,
+    ],
+  ];
+  for (const [mutate, message] of mutations) {
+    const artifact = makeArtifact();
+    mutate(artifact);
+    assert.throws(() => core.parseArtifact(artifact), message);
+  }
+});
+
+test("artifact parser validates catalog invariants", () => {
+  const mutations = [
+    [
+      (artifact) => {
+        artifact.catalogs.departments = [];
+      },
+      /catalog must not be empty/,
+    ],
+    [
+      (artifact) => {
+        artifact.catalogs.departments[0] = null;
+      },
+      /must be an object/,
+    ],
+    [
+      (artifact) => {
+        artifact.catalogs.departments[0].publication_count = -1;
+      },
+      /publication_count is invalid/,
+    ],
+    [
+      (artifact) => {
+        artifact.catalogs.faculty[0].display_name = "";
+      },
+      /must be a non-empty string/,
+    ],
+  ];
+  for (const [mutate, message] of mutations) {
+    const artifact = makeArtifact();
+    mutate(artifact);
+    assert.throws(() => core.parseArtifact(artifact), message);
+  }
+});
+
+function parseWithInvalidPoint(mutator) {
+  const artifact = makeArtifact();
+  mutator(artifact.points[0], artifact);
+  return core.parseArtifact(artifact);
+}
+
+test("artifact parser omits each class of invalid publication row", () => {
+  const mutations = [
+    (point, artifact) => {
+      artifact.points[0] = null;
+    },
+    (point) => {
+      point.work_id = "";
+    },
+    (point) => {
+      point.pca_x = "0";
+    },
+    (point) => {
+      point.title = "";
+    },
+    (point) => {
+      point.department_ids = "d-me";
+    },
+    (point) => {
+      point.department_ids = [];
+    },
+    (point) => {
+      point.department_ids = ["unknown"];
+    },
+    (point) => {
+      point.department_ids = ["d-me", "d-me"];
+    },
+    (point) => {
+      point.faculty_ids = ["unknown"];
+    },
+  ];
+  for (const mutate of mutations) {
+    const parsed = parseWithInvalidPoint(mutate);
+    assert.equal(parsed.omitted_point_count, 1);
+    assert.equal(parsed.points.length, 7);
+    assert.equal(parsed.warnings.length, 1);
+  }
+});
+
+test("artifact parser records duplicate rows and metadata disagreements", () => {
+  const source = makeArtifact();
+  source.points.push({ ...source.points[0] });
+  source.point_count = 99;
+  const artifact = core.parseArtifact(source);
+  assert.equal(artifact.omitted_point_count, 1);
+  assert.equal(artifact.warnings.length, 2);
+  assert.match(artifact.warnings[0], /does not match/);
+  assert.match([...artifact.omission_reasons.keys()][0], /duplicates work_id/);
+});
+
+test("artifact parser bounds oversized inputs before parsing them", () => {
+  const source = makeArtifact();
+  source.points = { length: 500001 };
+  assert.throws(() => core.parseArtifact(source), /at most 500000/);
+});
+
+test("publication defaults are bounded and long optional text is truncated", () => {
+  const source = makeArtifact();
+  Object.assign(source.points[0], {
+    authors: "a".repeat(10001),
+    year: 9,
+    citation_count: -4,
+    observation_count: 0,
+    venue: null,
+    doi: null,
+  });
+  const point = core.parseArtifact(source).points[0];
+  assert.equal(point.authors.length, 10000);
+  assert.equal(point.year, null);
+  assert.equal(point.citation_count, 0);
+  assert.equal(point.observation_count, 1);
+  assert.equal(point.venue, "");
+  assert.equal(point.doi, "");
+});
+
 test("schema-six keyword metadata is required and validated", () => {
   const cases = [
     [
@@ -128,6 +343,10 @@ test("schema-six keyword metadata is required and validated", () => {
     [
       (artifact) => (artifact.keywords[0].publication_count = 0),
       /publication_count is invalid/,
+    ],
+    [
+      (artifact) => (artifact.keywords[0].coordinates = null),
+      /coordinates is invalid/,
     ],
     [
       (artifact) => (artifact.keywords[0].coordinates.tsne.x = "bad"),
@@ -251,6 +470,28 @@ test("filter matching is OR within dimensions and AND across dimensions", () => 
     )
     .map((point) => point.work_id);
   assert.deepEqual(crossDimensionIds, ["p3", "p6"]);
+
+  const point = artifact.points[0];
+  assert.equal(core.pointMatches(point), true);
+  assert.equal(core.pointMatches(point, { titleQueries: ["missing"] }), false);
+  assert.equal(
+    core.pointMatches(point, { departmentIds: new Set(["d-ece"]) }),
+    false,
+  );
+  assert.equal(
+    core.pointMatches(point, { facultyIds: new Set(["f-bob"]) }),
+    false,
+  );
+});
+
+test("preferred IDs prioritize active, available choices", () => {
+  const ids = ["first", "second", "third"];
+  assert.equal(
+    core.preferredId(ids, new Set(["second"]), new Set(["first", "second"])),
+    "second",
+  );
+  assert.equal(core.preferredId(ids, new Set(), new Set(["third"])), "third");
+  assert.equal(core.preferredId(ids, new Set(), new Set()), "");
 });
 
 test("fit calculations center finite points and reject bad dimensions", () => {
@@ -266,9 +507,13 @@ test("fit calculations center finite points and reject bad dimensions", () => {
   assert.equal(Math.abs(view.offsetX), 0);
   assert.equal(Math.abs(view.offsetY), 0);
   assert.throws(() => core.fitView([{ x: 0, y: 0 }], 0, 600), TypeError);
+  assert.equal(core.fitView([], 100, 100), null);
+  assert.equal(core.fitView([{ x: Number.NaN, y: 0 }], 100, 100), null);
+  assert.equal(core.baseScale(10, 10), 1);
 });
 
 test("dates are rendered in UTC and invalid values stay blank", () => {
   assert.match(core.formatUtcDate("2026-07-17T00:00:00Z", "en-US"), /Jul 17, 2026/);
   assert.equal(core.formatUtcDate("not-a-date", "en-US"), "");
+  assert.equal(core.formatUtcDate(null, "en-US"), "");
 });
