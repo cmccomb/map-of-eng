@@ -421,8 +421,9 @@ test("topic keywords annotate the map and dot sizing reveals age or impact", asy
   const canvas = page.locator("#research-map");
   await expect(canvas).toHaveAttribute(
     "aria-label",
-    /showing 8 publications across 3 topic keywords/,
+    /showing 8 publications across 3 topic regions and 6 detailed topics/,
   );
+  await expect(canvas).toHaveAttribute("data-visible-keyword-levels", "0");
   const uniformImage = await canvas.screenshot();
   await expect(page.locator("#size-legend")).toBeHidden();
 
@@ -452,10 +453,13 @@ test("topic keywords annotate the map and dot sizing reveals age or impact", asy
   const citedImage = await canvas.screenshot();
   expect(citedImage.equals(newestImage)).toBe(false);
 
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(canvas).toHaveAttribute("data-visible-keyword-levels", "0,1");
+
   await canvas.focus();
   await canvas.press("Enter");
   await expect(page.locator("#detail-keyword")).toHaveText(
-    /robotic design|energy systems|biomedical interfaces/,
+    /robotic design|energy systems|biomedical interfaces.*›/,
   );
 });
 

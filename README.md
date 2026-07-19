@@ -24,10 +24,11 @@ resulting subset. Publications can also be colored by year or citation count.
 The year scale is linear across the central 98% of dated works; the citation
 scale is logarithmic through the 99th percentile. Explicit `≤` and `≥` legend
 endpoints retain outliers without letting them compress the rest of the corpus
-into one color. Concise keywords label the topical regions directly on the map
-and remain anchored to their precomputed centroids as visitors switch layouts,
-pan, zoom, or filter the corpus. Each publication detail card also identifies
-its assigned topic keyword.
+into one color. Thirty overview keywords label the topical landscape directly
+on the map; approximately 120 smaller nested topics fade in as visitors zoom.
+Labels remain anchored to their precomputed centroids as visitors switch
+layouts, pan, zoom, or filter the corpus. Each publication detail card shows its
+overview-to-detail topic path.
 
 Visitors can keep dots uniform or size them by oldest publication, newest
 publication, or citation count. Year sizing uses the same robust central range
@@ -101,5 +102,5 @@ npm test
 The suite includes parser and color-generation checks plus browser coverage for
 filters, layouts, topical keywords, dot sizing, color keys, canvas controls,
 failure recovery, accessibility, responsive widths, and a production-sized
-32,958-point artifact. GitHub Actions runs the same checks for every pull
+artifact with more than 30,000 points. GitHub Actions runs the same checks for every pull
 request and every push to `main`.

@@ -3,7 +3,7 @@
 const TITLE_COLOR_CAPACITY = 32;
 const SEQUENTIAL_COLOR_STEPS = 48;
 const SIZE_RADIUS_STEPS = 8;
-const KEYWORD_LABEL_MIN_MATCHES = 3;
+const DETAIL_KEYWORD_SCALE = 1.5;
 const ARTIFACT_FETCH_TIMEOUT_MS = 60_000;
 const core = globalThis.ResearchMapCore;
 
@@ -15,6 +15,7 @@ const state = {
   departments: [],
   faculty: [],
   keywords: [],
+  keywordLevels: [],
   layouts: [],
   departmentById: new Map(),
   facultyById: new Map(),
@@ -502,30 +503,54 @@ function rectanglesOverlap(left, right) {
 }
 
 function drawKeywordLabels(width, height) {
-  if (!state.keywords.length) return;
+  if (!state.keywords.length) {
+    canvas.dataset.visibleKeywordLevels = "";
+    return;
+  }
   const matchedCounts = new Map();
   if (state.filtersActive) {
     for (const point of state.matchedPoints) {
-      matchedCounts.set(
-        point.keyword_id,
-        (matchedCounts.get(point.keyword_id) || 0) + 1,
-      );
+      for (const keywordId of point.keyword_ids) {
+        matchedCounts.set(keywordId, (matchedCounts.get(keywordId) || 0) + 1);
+      }
     }
   }
   const unitScale = baseScale(width, height);
-  const fontSize = width < 700 ? 9.5 : 11;
   const candidates = state.keywords
     .filter(
-      (keyword) =>
-        !state.filtersActive ||
-        (matchedCounts.get(keyword.keyword_id) || 0) >= KEYWORD_LABEL_MIN_MATCHES,
+      (keyword) => {
+        const scaleThreshold =
+          keyword.level === 0
+            ? 0
+            : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.level - 1);
+        const minimumMatches = keyword.level === 0 ? 3 : 2;
+        return (
+          state.scale >= scaleThreshold &&
+          (!state.filtersActive ||
+            (matchedCounts.get(keyword.keyword_id) || 0) >= minimumMatches)
+        );
+      },
     )
     .map((keyword) => {
       const coordinates = keyword._coordinates.get(state.layoutId);
+      const scaleThreshold =
+        keyword.level === 0
+          ? 0
+          : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.level - 1);
       return {
         ...keyword,
         x: width / 2 + coordinates.x * unitScale * state.scale + state.offsetX,
         y: height / 2 - coordinates.y * unitScale * state.scale + state.offsetY,
+        fontSize:
+          keyword.level === 0 ? (width < 700 ? 9.5 : 11) : width < 700 ? 8 : 9,
+        opacity:
+          keyword.level === 0
+            ? 1
+            : Math.min(
+                1,
+                0.18 +
+                  (state.scale - scaleThreshold) / Math.max(0.35, scaleThreshold * 0.3),
+              ),
       };
     })
     .filter(
@@ -537,25 +562,29 @@ function drawKeywordLabels(width, height) {
     )
     .sort(
       (left, right) =>
+        left.level - right.level ||
         right.publication_count - left.publication_count ||
         left.label.localeCompare(right.label),
     );
 
   context.save();
-  context.font = `650 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
   context.textAlign = "center";
   context.textBaseline = "middle";
   const placed = [];
+  const placedLevels = new Set();
   for (const keyword of candidates) {
+    context.font = `${keyword.level === 0 ? 650 : 560} ${keyword.fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
     const textWidth = context.measureText(keyword.label).width;
     const box = {
       left: keyword.x - textWidth / 2 - 7,
       right: keyword.x + textWidth / 2 + 7,
-      top: keyword.y - fontSize / 2 - 5,
-      bottom: keyword.y + fontSize / 2 + 5,
+      top: keyword.y - keyword.fontSize / 2 - 5,
+      bottom: keyword.y + keyword.fontSize / 2 + 5,
     };
     if (placed.some((existing) => rectanglesOverlap(box, existing))) continue;
     placed.push(box);
+    placedLevels.add(keyword.level);
+    context.globalAlpha = keyword.opacity;
     roundedRectangle(
       box.left,
       box.top,
@@ -572,6 +601,7 @@ function drawKeywordLabels(width, height) {
     context.fillText(keyword.label, keyword.x, keyword.y + 0.25);
   }
   context.restore();
+  canvas.dataset.visibleKeywordLevels = [...placedLevels].sort().join(",");
 }
 
 function draw() {
@@ -647,11 +677,19 @@ function updateStatus() {
   }
   clearFiltersButton.disabled = !state.filtersActive;
   zoomResultsButton.disabled = !state.filtersActive || matched === 0;
+  const keywordDescription = state.keywordLevels.length
+    ? ` across ${state.keywordLevels
+        .map(
+          (level) =>
+            `${level.keyword_count.toLocaleString()} ${level.label.toLocaleLowerCase()}`,
+        )
+        .join(" and ")}`
+    : "";
   canvas.setAttribute(
     "aria-label",
     `Semantic scatter plot showing ${matched.toLocaleString()} ${
       state.filtersActive ? "matching " : ""
-    }publications across ${state.keywords.length.toLocaleString()} topic keywords`,
+    }publications${keywordDescription}`,
   );
 }
 
@@ -1377,7 +1415,10 @@ function showDetails(point) {
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
   detailKeyword.textContent =
-    state.keywordById.get(point.keyword_id)?.label || "Unavailable";
+    point.keyword_ids
+      .map((keywordId) => state.keywordById.get(keywordId)?.label)
+      .filter(Boolean)
+      .join(" › ") || "Unavailable";
   if (point.source_url) {
     detailLink.href = point.source_url;
     detailLink.hidden = false;
@@ -1841,6 +1882,7 @@ function setUnavailableState(error) {
   state.matchedPoints = [];
   state.drawablePoints = [];
   state.keywords = [];
+  state.keywordLevels = [];
   state.keywordById = new Map();
   statusElement.textContent =
     "The publication map is temporarily unavailable. The dataset and provenance remain available.";
@@ -1897,6 +1939,7 @@ async function loadMap() {
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
     state.keywords = artifact.keywords.map(prepareKeyword);
+    state.keywordLevels = artifact.keyword_levels;
     state.layouts = artifact.layouts;
     state.layoutById = new Map(
       state.layouts.map((layout) => [layout.layout_id, layout]),
