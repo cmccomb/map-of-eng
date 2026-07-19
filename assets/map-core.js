@@ -269,12 +269,78 @@
     return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
   }
 
+  function parseKeywords(
+    items,
+    layouts,
+    { required = false, allowEmpty = false } = {},
+  ) {
+    if (!Array.isArray(items)) {
+      if (!required && items === undefined) return { items: [], ids: new Set() };
+      throw new ArtifactError("Artifact keywords must be an array");
+    }
+    if (required && !allowEmpty && !items.length) {
+      throw new ArtifactError("Artifact keywords must not be empty");
+    }
+    const seen = new Set();
+    const parsed = items.map((item, index) => {
+      if (!isObject(item)) {
+        throw new ArtifactError(`keywords[${index}] must be an object`);
+      }
+      const keywordId = requiredString(
+        item.keyword_id,
+        `keywords[${index}].keyword_id`,
+        { maxLength: 200 },
+      );
+      if (seen.has(keywordId)) {
+        throw new ArtifactError(`Duplicate keyword id: ${keywordId}`);
+      }
+      seen.add(keywordId);
+      const publicationCount = Number(item.publication_count);
+      if (!Number.isInteger(publicationCount) || publicationCount < 1) {
+        throw new ArtifactError(
+          `keywords[${index}].publication_count is invalid`,
+        );
+      }
+      if (!isObject(item.coordinates)) {
+        throw new ArtifactError(`keywords[${index}].coordinates is invalid`);
+      }
+      const coordinates = Object.create(null);
+      for (const layout of layouts) {
+        const pair = item.coordinates[layout.layout_id];
+        if (
+          !isObject(pair) ||
+          typeof pair.x !== "number" ||
+          typeof pair.y !== "number" ||
+          !Number.isFinite(pair.x) ||
+          !Number.isFinite(pair.y)
+        ) {
+          throw new ArtifactError(
+            `keywords[${index}] has invalid ${layout.layout_id} coordinates`,
+          );
+        }
+        coordinates[layout.layout_id] = { x: pair.x, y: pair.y };
+      }
+      return {
+        ...item,
+        keyword_id: keywordId,
+        label: requiredString(item.label, `keywords[${index}].label`, {
+          maxLength: 160,
+        }),
+        publication_count: publicationCount,
+        coordinates,
+      };
+    });
+    return { items: parsed, ids: seen };
+  }
+
   function parsePoint(
     point,
     index,
     layouts,
     departmentIds,
     facultyIds,
+    keywordIds,
+    requireKeyword,
     seenWorkIds,
   ) {
     if (!isObject(point)) throw new ArtifactError(`points[${index}] is invalid`);
@@ -299,6 +365,13 @@
       coordinates[layout.layout_id] = { x, y };
     }
     const year = Number(point.year);
+    const keywordId = optionalString(point.keyword_id, { maxLength: 200 });
+    if (requireKeyword && !keywordId) {
+      throw new ArtifactError(`points[${index}].keyword_id is required`);
+    }
+    if (keywordId && !keywordIds.has(keywordId)) {
+      throw new ArtifactError(`points[${index}].keyword_id is unknown`);
+    }
     const parsed = {
       ...point,
       work_id: workId,
@@ -326,6 +399,7 @@
       ),
       doi: optionalString(point.doi, { maxLength: 1000 }),
       source_url: safeHttpUrl(point.source_url),
+      keyword_id: keywordId,
       _title: normalizedText(point.title),
       _coordinates: coordinates,
     };
@@ -358,6 +432,11 @@
       idField: "person_id",
       labelField: "display_name",
     });
+    const requireKeywords = artifact.schema_version >= 6;
+    const keywords = parseKeywords(artifact.keywords, layouts, {
+      required: requireKeywords,
+      allowEmpty: artifact.points.length === 0,
+    });
     const seenWorkIds = new Set();
     const points = [];
     const omissionReasons = new Map();
@@ -370,6 +449,8 @@
             layouts,
             departments.ids,
             faculty.ids,
+            keywords.ids,
+            requireKeywords,
             seenWorkIds,
           ),
         );
@@ -400,6 +481,7 @@
         departments: departments.items,
         faculty: faculty.items,
       },
+      keywords: keywords.items,
       points,
       omitted_point_count: omittedPointCount,
       omission_reasons: omissionReasons,

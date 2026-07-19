@@ -2,6 +2,8 @@
 
 const TITLE_COLOR_CAPACITY = 32;
 const SEQUENTIAL_COLOR_STEPS = 48;
+const SIZE_RADIUS_STEPS = 8;
+const KEYWORD_LABEL_MIN_MATCHES = 3;
 const ARTIFACT_FETCH_TIMEOUT_MS = 60_000;
 const core = globalThis.ResearchMapCore;
 
@@ -12,9 +14,11 @@ const state = {
   screenPoints: [],
   departments: [],
   faculty: [],
+  keywords: [],
   layouts: [],
   departmentById: new Map(),
   facultyById: new Map(),
+  keywordById: new Map(),
   layoutById: new Map(),
   departmentColors: new Map(),
   facultyColors: new Map(),
@@ -29,6 +33,7 @@ const state = {
   activeDepartments: new Set(),
   activeFaculty: new Set(),
   colorMode: "department",
+  sizeMode: "none",
   displayMode: "highlight",
   layoutId: "",
   filtersActive: false,
@@ -87,6 +92,45 @@ function citationColor(point) {
   return colorAt(state.citationPalette, amount);
 }
 
+function normalizedYear(point) {
+  if (!Number.isInteger(point.year) || !state.yearRange) return null;
+  const { minimum, maximum } = state.yearRange;
+  if (minimum === maximum) return 0.5;
+  return Math.min(1, Math.max(0, (point.year - minimum) / (maximum - minimum)));
+}
+
+function sizeAmount(point) {
+  if (state.sizeMode === "citations") {
+    const citations = Math.max(0, Number(point.citation_count) || 0);
+    return state.citationMaximum
+      ? Math.min(1, Math.log1p(citations) / Math.log1p(state.citationMaximum))
+      : 0;
+  }
+  const year = normalizedYear(point);
+  if (year === null) return null;
+  if (state.sizeMode === "oldest") return 1 - year;
+  if (state.sizeMode === "newest") return year;
+  return null;
+}
+
+function pointRadius(point, baseRadius) {
+  if (state.sizeMode === "none") return baseRadius;
+  const amount = sizeAmount(point);
+  if (amount === null) return Math.max(0.45, baseRadius * 0.55);
+  const quantized =
+    Math.round(amount * (SIZE_RADIUS_STEPS - 1)) / (SIZE_RADIUS_STEPS - 1);
+  return Math.max(0.45, baseRadius * (0.55 + 2.25 * Math.sqrt(quantized)));
+}
+
+function matchedBaseRadius() {
+  if (!state.filtersActive) return 0.72;
+  const matchTotal = state.matchedPoints.length;
+  if (matchTotal > 7500) return 0.9;
+  if (matchTotal > 3000) return 1.05;
+  if (matchTotal > 1000) return 1.25;
+  return 1.7;
+}
+
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
@@ -121,6 +165,8 @@ const zoomResultsButton = document.querySelector("#zoom-results");
 const resetViewButton = document.querySelector("#reset-view");
 const mapLegend = document.querySelector("#map-legend");
 const legendSummary = document.querySelector("#legend-summary");
+const sizeLegend = document.querySelector("#size-legend");
+const sizeNote = document.querySelector("#size-note");
 const emptyState = document.querySelector("#empty-state");
 const emptyTitle = document.querySelector("#empty-title");
 const emptyCopy = document.querySelector("#empty-copy");
@@ -130,6 +176,7 @@ const detailMeta = document.querySelector("#detail-meta");
 const detailAuthors = document.querySelector("#detail-authors");
 const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
+const detailKeyword = document.querySelector("#detail-keyword");
 const detailLink = document.querySelector("#detail-link");
 const closeDetail = document.querySelector("#close-detail");
 const compactLayoutQuery = window.matchMedia("(max-width: 680px)");
@@ -200,6 +247,13 @@ function preparePoint(point) {
     faculty_ids: Array.isArray(point.faculty_ids) ? point.faculty_ids : [],
     _coordinates: coordinates,
     _title: point._title,
+  };
+}
+
+function prepareKeyword(keyword) {
+  return {
+    ...keyword,
+    _coordinates: new Map(Object.entries(keyword.coordinates)),
   };
 }
 
@@ -357,22 +411,19 @@ function drawMatched(screenPoints) {
   const groups = new Map();
   for (const screenPoint of screenPoints) {
     const color = colorFor(screenPoint.point);
-    const group = groups.get(color) || [];
-    group.push(screenPoint);
-    groups.set(color, group);
-  }
-  let radius = 0.72;
-  if (state.filtersActive) {
-    const matchTotal = state.matchedPoints.length;
-    if (matchTotal > 7500) radius = 0.9;
-    else if (matchTotal > 3000) radius = 1.05;
-    else if (matchTotal > 1000) radius = 1.25;
-    else radius = 1.7;
+    const key = `${color}:${screenPoint.radius.toFixed(3)}`;
+    const group = groups.get(key) || {
+      color,
+      radius: screenPoint.radius,
+      points: [],
+    };
+    group.points.push(screenPoint);
+    groups.set(key, group);
   }
   const quantitativeMode = ["year", "citations"].includes(state.colorMode);
   const alpha = state.filtersActive ? 0.9 : quantitativeMode ? 0.68 : 0.54;
-  for (const [color, group] of groups) {
-    drawBatch(group, radius, color, alpha);
+  for (const group of groups.values()) {
+    drawBatch(group.points, group.radius, group.color, alpha);
   }
   if (state.filtersActive && state.matchedPoints.length <= 1500) {
     context.save();
@@ -381,8 +432,9 @@ function drawMatched(screenPoints) {
     context.lineWidth = 0.65;
     context.beginPath();
     for (const screenPoint of screenPoints) {
-      context.moveTo(screenPoint.x + radius + 0.75, screenPoint.y);
-      context.arc(screenPoint.x, screenPoint.y, radius + 0.75, 0, Math.PI * 2);
+      const outlineRadius = screenPoint.radius + 0.75;
+      context.moveTo(screenPoint.x + outlineRadius, screenPoint.y);
+      context.arc(screenPoint.x, screenPoint.y, outlineRadius, 0, Math.PI * 2);
     }
     context.stroke();
     context.restore();
@@ -409,8 +461,116 @@ function drawSelected(screenPoints) {
   context.globalAlpha = 0.95;
   context.lineWidth = 1.5;
   context.beginPath();
-  context.arc(selected.x, selected.y, 7, 0, Math.PI * 2);
+  context.arc(
+    selected.x,
+    selected.y,
+    Math.max(7, selected.radius + 3),
+    0,
+    Math.PI * 2,
+  );
   context.stroke();
+  context.restore();
+}
+
+function roundedRectangle(x, y, width, height, radius) {
+  const corner = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + corner, y);
+  context.lineTo(x + width - corner, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + corner);
+  context.lineTo(x + width, y + height - corner);
+  context.quadraticCurveTo(
+    x + width,
+    y + height,
+    x + width - corner,
+    y + height,
+  );
+  context.lineTo(x + corner, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - corner);
+  context.lineTo(x, y + corner);
+  context.quadraticCurveTo(x, y, x + corner, y);
+  context.closePath();
+}
+
+function rectanglesOverlap(left, right) {
+  return !(
+    left.right + 4 < right.left ||
+    right.right + 4 < left.left ||
+    left.bottom + 4 < right.top ||
+    right.bottom + 4 < left.top
+  );
+}
+
+function drawKeywordLabels(width, height) {
+  if (!state.keywords.length) return;
+  const matchedCounts = new Map();
+  if (state.filtersActive) {
+    for (const point of state.matchedPoints) {
+      matchedCounts.set(
+        point.keyword_id,
+        (matchedCounts.get(point.keyword_id) || 0) + 1,
+      );
+    }
+  }
+  const unitScale = baseScale(width, height);
+  const fontSize = width < 700 ? 9.5 : 11;
+  const candidates = state.keywords
+    .filter(
+      (keyword) =>
+        !state.filtersActive ||
+        (matchedCounts.get(keyword.keyword_id) || 0) >= KEYWORD_LABEL_MIN_MATCHES,
+    )
+    .map((keyword) => {
+      const coordinates = keyword._coordinates.get(state.layoutId);
+      return {
+        ...keyword,
+        x: width / 2 + coordinates.x * unitScale * state.scale + state.offsetX,
+        y: height / 2 - coordinates.y * unitScale * state.scale + state.offsetY,
+      };
+    })
+    .filter(
+      (keyword) =>
+        keyword.x >= -80 &&
+        keyword.x <= width + 80 &&
+        keyword.y >= -30 &&
+        keyword.y <= height + 30,
+    )
+    .sort(
+      (left, right) =>
+        right.publication_count - left.publication_count ||
+        left.label.localeCompare(right.label),
+    );
+
+  context.save();
+  context.font = `650 ${fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const placed = [];
+  for (const keyword of candidates) {
+    const textWidth = context.measureText(keyword.label).width;
+    const box = {
+      left: keyword.x - textWidth / 2 - 7,
+      right: keyword.x + textWidth / 2 + 7,
+      top: keyword.y - fontSize / 2 - 5,
+      bottom: keyword.y + fontSize / 2 + 5,
+    };
+    if (placed.some((existing) => rectanglesOverlap(box, existing))) continue;
+    placed.push(box);
+    roundedRectangle(
+      box.left,
+      box.top,
+      box.right - box.left,
+      box.bottom - box.top,
+      7,
+    );
+    context.fillStyle = themeColor("--keyword-background", "#091621dc");
+    context.fill();
+    context.strokeStyle = themeColor("--keyword-border", "#8fa5b540");
+    context.lineWidth = 0.75;
+    context.stroke();
+    context.fillStyle = themeColor("--keyword-text", "#eef5f8");
+    context.fillText(keyword.label, keyword.x, keyword.y + 0.25);
+  }
   context.restore();
 }
 
@@ -423,6 +583,7 @@ function draw() {
 
   state.screenPoints = [];
   state.spatialIndex = new Map();
+  const baseRadius = matchedBaseRadius();
   for (const point of state.drawablePoints) {
     const screenPoint = mapToScreen(point, bounds.width, bounds.height);
     if (
@@ -433,6 +594,9 @@ function draw() {
     ) {
       continue;
     }
+    screenPoint.radius = screenPoint.matched
+      ? pointRadius(point, baseRadius)
+      : 0.55;
     state.screenPoints.push(screenPoint);
     indexPoint(screenPoint);
   }
@@ -446,6 +610,7 @@ function draw() {
     0.12,
   );
   drawMatched(matchedPoints);
+  drawKeywordLabels(bounds.width, bounds.height);
   drawSelected(state.screenPoints);
 }
 
@@ -486,7 +651,7 @@ function updateStatus() {
     "aria-label",
     `Semantic scatter plot showing ${matched.toLocaleString()} ${
       state.filtersActive ? "matching " : ""
-    }publications`,
+    }publications across ${state.keywords.length.toLocaleString()} topic keywords`,
   );
 }
 
@@ -645,6 +810,45 @@ function appendColorKeyItems(items, mode) {
   }
 }
 
+function renderSizeLegend() {
+  const descriptions = {
+    none: {
+      note: "Every publication uses the same dot size.",
+      legend: "",
+    },
+    oldest: {
+      note: "Older publications appear larger; unknown years stay small.",
+      legend: "Larger dots are older",
+    },
+    newest: {
+      note: "Newer publications appear larger; unknown years stay small.",
+      legend: "Larger dots are newer",
+    },
+    citations: {
+      note: "More widely cited publications appear larger on a log scale.",
+      legend: "Larger dots are more cited",
+    },
+  };
+  const description = descriptions[state.sizeMode] || descriptions.none;
+  sizeNote.textContent = description.note;
+  sizeLegend.replaceChildren();
+  sizeLegend.hidden = state.sizeMode === "none";
+  if (sizeLegend.hidden) return;
+
+  const examples = document.createElement("div");
+  examples.className = "size-examples";
+  for (const diameter of [5, 9, 14]) {
+    const dot = document.createElement("i");
+    dot.style.width = `${diameter}px`;
+    dot.style.height = `${diameter}px`;
+    dot.setAttribute("aria-hidden", "true");
+    examples.append(dot);
+  }
+  const label = document.createElement("span");
+  label.textContent = description.legend;
+  sizeLegend.append(examples, label);
+}
+
 function renderLegend() {
   mapLegend.replaceChildren();
   legendSummary.textContent = "";
@@ -725,6 +929,7 @@ function renderLegend() {
       "legend-dot-context",
     );
   }
+  renderSizeLegend();
 }
 
 function applyFilters() {
@@ -1171,6 +1376,8 @@ function showDetails(point) {
   detailAuthors.textContent = point.authors || "Author list unavailable";
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
+  detailKeyword.textContent =
+    state.keywordById.get(point.keyword_id)?.label || "Unavailable";
   if (point.source_url) {
     detailLink.href = point.source_url;
     detailLink.hidden = false;
@@ -1365,6 +1572,16 @@ document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
     if (!input.checked) return;
     state.colorMode = input.value;
     renderLegend();
+    scheduleDraw();
+  });
+});
+
+document.querySelectorAll('input[name="size-mode"]').forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) return;
+    state.sizeMode = input.value;
+    renderSizeLegend();
+    tooltip.hidden = true;
     scheduleDraw();
   });
 });
@@ -1623,6 +1840,8 @@ function setUnavailableState(error) {
   state.points = [];
   state.matchedPoints = [];
   state.drawablePoints = [];
+  state.keywords = [];
+  state.keywordById = new Map();
   statusElement.textContent =
     "The publication map is temporarily unavailable. The dataset and provenance remain available.";
   statusElement.classList.add("error");
@@ -1677,6 +1896,7 @@ async function loadMap() {
 
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
+    state.keywords = artifact.keywords.map(prepareKeyword);
     state.layouts = artifact.layouts;
     state.layoutById = new Map(
       state.layouts.map((layout) => [layout.layout_id, layout]),
@@ -1689,6 +1909,9 @@ async function loadMap() {
     );
     state.facultyById = new Map(
       state.faculty.map((item) => [item.person_id, item]),
+    );
+    state.keywordById = new Map(
+      state.keywords.map((item) => [item.keyword_id, item]),
     );
     state.points = artifact.points.map(preparePoint);
     state.omittedPointCount = artifact.omitted_point_count;

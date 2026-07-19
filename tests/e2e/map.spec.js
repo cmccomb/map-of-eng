@@ -414,6 +414,51 @@ test("quantitative colors label robust ranges without hiding outliers", async ({
   );
 });
 
+test("topic keywords annotate the map and dot sizing reveals age or impact", async ({
+  page,
+}) => {
+  await openMap(page);
+  const canvas = page.locator("#research-map");
+  await expect(canvas).toHaveAttribute(
+    "aria-label",
+    /showing 8 publications across 3 topic keywords/,
+  );
+  const uniformImage = await canvas.screenshot();
+  await expect(page.locator("#size-legend")).toBeHidden();
+
+  await page.locator(".size-control").getByText("Oldest", { exact: true }).click();
+  await expect(page.getByLabel("Oldest", { exact: true })).toBeChecked();
+  await expect(page.locator("#size-note")).toContainText(
+    "Older publications appear larger",
+  );
+  await expect(page.locator("#size-legend")).toContainText(
+    "Larger dots are older",
+  );
+  const oldestImage = await canvas.screenshot();
+  expect(oldestImage.equals(uniformImage)).toBe(false);
+
+  await page.locator(".size-control").getByText("Newest", { exact: true }).click();
+  const newestImage = await canvas.screenshot();
+  expect(newestImage.equals(oldestImage)).toBe(false);
+
+  await page
+    .locator(".size-control")
+    .getByText("Widely cited", { exact: true })
+    .click();
+  await expect(page.locator("#size-note")).toContainText("log scale");
+  await expect(page.locator("#size-legend")).toContainText(
+    "Larger dots are more cited",
+  );
+  const citedImage = await canvas.screenshot();
+  expect(citedImage.equals(newestImage)).toBe(false);
+
+  await canvas.focus();
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-keyword")).toHaveText(
+    /robotic design|energy systems|biomedical interfaces/,
+  );
+});
+
 test("layout changes geometry while preserving filters, color mode, and details", async ({
   page,
 }) => {

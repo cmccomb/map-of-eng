@@ -19,6 +19,9 @@
   --canvas-highlight: #73c5df;
   --canvas-selected: #ffffff;
   --canvas-unassigned: #657789;
+  --keyword-background: #091621dc;
+  --keyword-border: #8fa5b540;
+  --keyword-text: #eef5f8;
   --line: #293a49;
   --line-strong: #415362;
   --muted: #a7b2bc;
@@ -73,6 +76,9 @@
   --canvas-highlight: #006d8f;
   --canvas-selected: #102733;
   --canvas-unassigned: #5b6f7a;
+  --keyword-background: #fbfdfde8;
+  --keyword-border: #60788742;
+  --keyword-text: #243944;
   --line: #c8d3d9;
   --line-strong: #9dabb4;
   --muted: #52636f;
@@ -347,6 +353,7 @@ h1 {
 .field,
 .layout-fieldset,
 .color-fieldset,
+.size-fieldset,
 .mode-fieldset {
   display: block;
   margin: 0;
@@ -358,7 +365,8 @@ h1 {
 .author-field + .department-field,
 .department-field + .layout-fieldset,
 .layout-fieldset + .color-fieldset,
-.color-fieldset + .mode-fieldset {
+.color-fieldset + .size-fieldset,
+.size-fieldset + .mode-fieldset {
   margin-top: 1.15rem;
   padding-top: 1.15rem;
   border-top: 1px solid var(--line);
@@ -367,6 +375,7 @@ h1 {
 .field > span,
 .layout-fieldset legend,
 .color-fieldset legend,
+.size-fieldset legend,
 .mode-fieldset legend {
   display: block;
   margin: 0 0 0.42rem;
@@ -518,6 +527,11 @@ input[type="search"]:focus {
   margin: 0.5rem 0 0;
 }
 
+.size-note {
+  min-height: 1.4em;
+  margin: 0.5rem 0 0;
+}
+
 .segmented-control {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -537,6 +551,10 @@ input[type="search"]:focus {
 
 .color-control label:nth-child(n + 4) {
   grid-column: span 3;
+}
+
+.size-control {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .segmented-control label {
@@ -680,6 +698,41 @@ input[type="search"]:focus {
   color: var(--quiet);
   font-size: 0.68rem;
   scrollbar-color: var(--line-strong) transparent;
+}
+
+.size-legend {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.25rem 0.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.size-legend[hidden] {
+  display: none;
+}
+
+.size-examples {
+  display: flex;
+  gap: 0.38rem;
+  align-items: center;
+  min-height: 1.35rem;
+}
+
+.size-examples i {
+  display: block;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--text) 58%, transparent);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.size-legend span {
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.35;
 }
 
 .map-legend > span {
@@ -1002,7 +1055,7 @@ canvas.dragging {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.72fr);
   gap: 1.5rem;
   margin-top: 1rem;
 }

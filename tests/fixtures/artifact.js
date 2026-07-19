@@ -61,13 +61,15 @@ function makePoint(row, index) {
     observation_count: index % 2 ? 2 : 1,
     doi: `10.1000/example.${index + 1}`,
     source_url: `https://example.org/publication/${index + 1}`,
+    keyword_id: `keyword-${(index % 3) + 1}`,
   };
 }
 
 function makeArtifact() {
   const points = pointRows.map(makePoint);
   return {
-    schema_version: 4,
+    schema_version: 6,
+    keyword_model_version: "fixture-keywords-v1",
     point_count: points.length,
     source_data_newest_at_utc: "2026-07-17T00:00:00Z",
     default_layout_id: "pca",
@@ -76,6 +78,35 @@ function makeArtifact() {
       departments: departments.map((item) => ({ ...item })),
       faculty: faculty.map((item) => ({ ...item })),
     },
+    keywords: [
+      {
+        keyword_id: "keyword-1",
+        label: "robotic design",
+        publication_count: 3,
+        coordinates: {
+          pca: { x: -0.1, y: 0.12 },
+          tsne: { x: 0.1, y: -0.05 },
+        },
+      },
+      {
+        keyword_id: "keyword-2",
+        label: "energy systems",
+        publication_count: 3,
+        coordinates: {
+          pca: { x: 0.2, y: -0.1 },
+          tsne: { x: -0.15, y: 0.18 },
+        },
+      },
+      {
+        keyword_id: "keyword-3",
+        label: "biomedical interfaces",
+        publication_count: 2,
+        coordinates: {
+          pca: { x: 0.45, y: -0.35 },
+          tsne: { x: 0.58, y: 0.5 },
+        },
+      },
+    ],
     points,
     additive_metadata: { accepted: true },
   };

@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#0a141e" />
     <meta
       name="description"
-      content="Explore the semantic landscape of CMU Engineering publications by department, faculty author, title, year, and citation count."
+      content="Explore topic keywords across CMU Engineering publications by department, faculty author, title, year, and citation count."
     />
     <title>CMU Engineering Research</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
@@ -223,6 +223,36 @@
             </div>
           </fieldset>
 
+          <fieldset class="size-fieldset">
+            <legend>Dot size</legend>
+            <div class="segmented-control size-control">
+              <label>
+                <input
+                  type="radio"
+                  name="size-mode"
+                  value="none"
+                  checked
+                />
+                <span>None</span>
+              </label>
+              <label>
+                <input type="radio" name="size-mode" value="oldest" />
+                <span>Oldest</span>
+              </label>
+              <label>
+                <input type="radio" name="size-mode" value="newest" />
+                <span>Newest</span>
+              </label>
+              <label>
+                <input type="radio" name="size-mode" value="citations" />
+                <span>Widely cited</span>
+              </label>
+            </div>
+            <p id="size-note" class="field-note size-note" aria-live="polite">
+              Every publication uses the same dot size.
+            </p>
+          </fieldset>
+
           <fieldset class="mode-fieldset">
             <legend>Display</legend>
             <div class="segmented-control">
@@ -271,6 +301,12 @@
             id="map-legend"
             class="map-legend"
             aria-label="Map legend"
+          ></div>
+          <div
+            id="size-legend"
+            class="size-legend"
+            aria-label="Dot size key"
+            hidden
           ></div>
         </aside>
 
@@ -365,6 +401,10 @@
               <span class="detail-label">CMU connections</span>
               <p id="detail-faculty"></p>
               <p id="detail-departments" class="detail-departments"></p>
+            </div>
+            <div>
+              <span class="detail-label">Topic keyword</span>
+              <p id="detail-keyword"></p>
             </div>
           </div>
           <a

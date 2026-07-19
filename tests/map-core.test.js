@@ -75,6 +75,12 @@ test("artifact parser accepts additive fields and sanitizes publication links", 
   const artifact = core.parseArtifact(source);
   assert.equal(artifact.points.length, 8);
   assert.equal(artifact.points[0].source_url, "");
+  assert.equal(artifact.points[0].keyword_id, "keyword-1");
+  assert.equal(artifact.keywords[0].label, "robotic design");
+  assert.deepEqual(artifact.keywords[0].coordinates.tsne, {
+    x: 0.1,
+    y: -0.05,
+  });
   assert.deepEqual(artifact.points[0].future_field, { retained: true });
   assert.equal(artifact.additive_metadata.accepted, true);
 });
@@ -101,6 +107,72 @@ test("structural catalog and layout defects remain fatal", () => {
   const missingLayout = makeArtifact();
   missingLayout.layouts = missingLayout.layouts.slice(0, 1);
   assert.throws(() => core.parseArtifact(missingLayout), /At least two map layouts/);
+});
+
+test("schema-six keyword metadata is required and validated", () => {
+  const cases = [
+    [
+      (artifact) => {
+        delete artifact.keywords;
+      },
+      /keywords must be an array/,
+    ],
+    [(artifact) => (artifact.keywords = []), /keywords must not be empty/],
+    [(artifact) => (artifact.keywords[0] = null), /must be an object/],
+    [
+      (artifact) =>
+        artifact.keywords.push({ ...artifact.keywords[0] }),
+      /Duplicate keyword id/,
+    ],
+    [
+      (artifact) => (artifact.keywords[0].publication_count = 0),
+      /publication_count is invalid/,
+    ],
+    [
+      (artifact) => (artifact.keywords[0].coordinates.tsne.x = "bad"),
+      /invalid tsne coordinates/,
+    ],
+    [(artifact) => (artifact.keywords[0].label = ""), /label must be/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const artifact = makeArtifact();
+    mutate(artifact);
+    assert.throws(() => core.parseArtifact(artifact), pattern);
+  }
+});
+
+test("points with missing or unknown keyword ids are omitted safely", () => {
+  for (const keywordId of ["", "unknown-keyword"]) {
+    const artifact = makeArtifact();
+    artifact.points[0].keyword_id = keywordId;
+    const parsed = core.parseArtifact(artifact);
+    assert.equal(parsed.points.length, 7);
+    assert.equal(parsed.omitted_point_count, 1);
+  }
+});
+
+test("older additive artifacts remain readable without keyword metadata", () => {
+  const artifact = makeArtifact();
+  artifact.schema_version = 5;
+  delete artifact.keywords;
+  artifact.points.forEach((point) => delete point.keyword_id);
+
+  const parsed = core.parseArtifact(artifact);
+
+  assert.deepEqual(parsed.keywords, []);
+  assert.equal(parsed.points.length, 8);
+});
+
+test("schema-six artifacts may represent an empty publication corpus", () => {
+  const artifact = makeArtifact();
+  artifact.points = [];
+  artifact.point_count = 0;
+  artifact.keywords = [];
+
+  const parsed = core.parseArtifact(artifact);
+
+  assert.deepEqual(parsed.keywords, []);
+  assert.deepEqual(parsed.points, []);
 });
 
 test("filter matching is OR within dimensions and AND across dimensions", () => {
