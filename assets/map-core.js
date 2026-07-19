@@ -74,6 +74,12 @@
     if (!isObject(config)) throw new ArtifactError("Map configuration is invalid");
     const title = requiredString(config.title, "config.title", { maxLength: 200 });
     const heading = optionalString(config.heading, { maxLength: 200 });
+    const defaultLayoutId = optionalString(config.default_layout_id, {
+      maxLength: 64,
+    });
+    if (defaultLayoutId && !FIELD_NAME_PATTERN.test(defaultLayoutId)) {
+      throw new ArtifactError("config.default_layout_id is invalid");
+    }
     const artifactBytes =
       config.artifact_bytes === undefined ? 0 : Number(config.artifact_bytes);
     if (
@@ -90,6 +96,7 @@
         return {
           title,
           heading,
+          default_layout_id: defaultLayoutId,
           artifact_url: absoluteUrl,
           artifact_bytes: artifactBytes,
         };
@@ -105,6 +112,7 @@
       return {
         title,
         heading,
+        default_layout_id: defaultLayoutId,
         artifact_url: safeRelativePath(artifactUrl, "config.artifact_url"),
         artifact_bytes: artifactBytes,
       };
@@ -127,6 +135,7 @@
     return {
       title,
       heading,
+      default_layout_id: defaultLayoutId,
       dataset_id: datasetId,
       dataset_revision: revision,
       artifact_path: artifactPath,

@@ -281,6 +281,10 @@ h1 {
   height: 100svh;
 }
 
+.mobile-toolbar {
+  display: none;
+}
+
 .filter-panel,
 .map-column {
   min-width: 0;
@@ -900,6 +904,47 @@ canvas.dragging {
   content: "·";
 }
 
+.map-controls {
+  position: absolute;
+  z-index: 6;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.22rem;
+  border: 1px solid var(--line);
+  border-radius: 0.62rem;
+  background: var(--panel-background);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.map-controls button {
+  display: grid;
+  width: 2.2rem;
+  min-height: 2.2rem;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 0.42rem;
+  background: transparent;
+  color: var(--label);
+  cursor: pointer;
+  font-size: 1.08rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.map-controls button:hover {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.map-controls button + button {
+  border-left: 1px solid var(--line);
+  border-radius: 0 0.42rem 0.42rem 0;
+}
+
 .empty-state {
   position: absolute;
   z-index: 4;
@@ -1080,6 +1125,11 @@ canvas.dragging {
   .map-help {
     bottom: 0.75rem;
   }
+
+  .map-controls {
+    right: 0.75rem;
+    bottom: 0.75rem;
+  }
 }
 
 @media (max-width: 680px) {
@@ -1096,34 +1146,118 @@ canvas.dragging {
     grid-template-columns: 1fr;
   }
 
+  .mobile-toolbar {
+    position: absolute;
+    z-index: 25;
+    top: 0.6rem;
+    right: 0.6rem;
+    left: 0.6rem;
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    min-height: 2.8rem;
+    padding: 0.3rem;
+    border: 1px solid var(--line);
+    border-radius: 0.8rem;
+    background: var(--panel-background);
+    box-shadow: var(--overlay-shadow);
+    backdrop-filter: blur(20px) saturate(1.18);
+  }
+
+  .mobile-brand {
+    min-width: 0;
+    margin: 0 auto 0 0.45rem;
+    overflow: hidden;
+    color: var(--label);
+    font-family:
+      Iowan Old Style,
+      Baskerville,
+      "Times New Roman",
+      serif;
+    font-size: 1rem;
+    font-weight: 550;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-toolbar button {
+    min-height: 2.12rem;
+    padding: 0.38rem 0.62rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+
+  .mobile-toolbar button[aria-expanded="true"] {
+    border-color: var(--control-active-line);
+    background: var(--control-active);
+    color: var(--text);
+  }
+
   .map-legend {
-    max-height: calc(min(16rem, 34svh) - 4.2rem);
+    max-height: min(45svh, 24rem);
   }
 
   .filter-panel {
-    top: 0.6rem;
-    bottom: calc(min(16rem, 34svh) + 1.2rem);
+    z-index: 22;
+    top: 4rem;
+    bottom: 0.6rem;
     left: 0.6rem;
     width: calc(100vw - 1.2rem);
     border-radius: 0.8rem;
   }
 
   .legend-panel {
-    top: auto;
+    z-index: 22;
+    top: 4rem;
     right: 0.6rem;
-    bottom: 0.6rem;
+    bottom: auto;
     left: 0.6rem;
     width: auto;
-    height: min(16rem, 34svh);
+    max-height: min(55svh, 30rem);
     border-radius: 0.8rem;
+  }
+
+  .filter-panel,
+  .legend-panel {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-0.5rem);
+    transition:
+      opacity 140ms ease,
+      transform 140ms ease,
+      visibility 140ms step-end;
+  }
+
+  .filter-panel.mobile-open,
+  .legend-panel.mobile-open {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition:
+      opacity 140ms ease,
+      transform 140ms ease,
+      visibility 0ms step-start;
   }
 
   .detail-panel {
     right: 0.6rem;
-    bottom: 0.6rem;
+    bottom: 4rem;
     left: 0.6rem;
     max-height: 58svh;
     border-radius: 0.8rem;
+  }
+
+  .map-controls {
+    right: 0.6rem;
+    bottom: 0.6rem;
   }
 
   .map-help {
@@ -1139,5 +1273,10 @@ canvas.dragging {
   .loading-progress:not([aria-valuenow]) i {
     animation: none;
     transform: translateX(106%);
+  }
+
+  .filter-panel,
+  .legend-panel {
+    transition: none;
   }
 }

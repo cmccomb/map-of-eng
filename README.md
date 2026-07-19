@@ -12,10 +12,11 @@ the same-origin copy with normal HTTP caching and renders it with the
 dependency-free canvas client in `assets/map.js`. It never computes embeddings
 or layouts.
 
-Every department uses the same semantic layouts. Visitors can switch between a
-PCA view of broad global structure and a t-SNE view of local topical
-neighborhoods. Both are computed centrally over the same deduplicated works and
-shipped as coordinates in the artifact. Visitors can build removable filter
+Every department uses the same semantic layouts. The interface opens with the
+t-SNE view of local topical neighborhoods so clusters are immediately visible;
+visitors can switch to the PCA view of broad global structure. Both are computed
+centrally over the same deduplicated works and shipped as coordinates in the
+artifact. Visitors can build removable filter
 pills for publication-title terms, departments, and faculty authors; choose
 between highlighting matches in context and showing matches alone; color
 comparisons by title term, department, or faculty author; and zoom to the
@@ -26,6 +27,12 @@ endpoints retain outliers without letting them compress the rest of the corpus
 into one color. Point size adapts to result density so full-corpus structure and
 sparse searches both remain legible. Search dimensions combine with AND;
 multiple values within a dimension combine with OR.
+
+The map remains the primary surface at every viewport size. Desktop controls
+float over it; compact screens begin with an unobstructed map and expose
+Settings and the Color key as mutually exclusive overlays. Persistent zoom-in,
+zoom-out, and fit controls keep the canvas usable without a mouse wheel, while
+the same operations remain available from the keyboard.
 
 Faculty and department color modes assign every cataloged entity a unique,
 stable color. The client generates each set at load time with deterministic

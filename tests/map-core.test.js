@@ -22,6 +22,7 @@ test("configuration parsing builds an encoded Hugging Face artifact URL", () => 
 test("configuration parsing accepts a safe same-origin artifact path", () => {
   const config = core.parseConfig({
     title: "Research",
+    default_layout_id: "tsne",
     artifact_url: "data/publications.0123456789abcdef.json",
     artifact_bytes: 123456,
   });
@@ -30,6 +31,7 @@ test("configuration parsing accepts a safe same-origin artifact path", () => {
     "data/publications.0123456789abcdef.json",
   );
   assert.equal(config.artifact_bytes, 123456);
+  assert.equal(config.default_layout_id, "tsne");
 });
 
 test("configuration parsing rejects unsafe URLs and paths", () => {
@@ -52,6 +54,15 @@ test("configuration parsing rejects unsafe URLs and paths", () => {
         title: "Map",
         artifact_url: "data/publications.json",
         artifact_bytes: -1,
+      }),
+    core.ArtifactError,
+  );
+  assert.throws(
+    () =>
+      core.parseConfig({
+        title: "Map",
+        artifact_url: "data/publications.json",
+        default_layout_id: "../tsne",
       }),
     core.ArtifactError,
   );

@@ -53,6 +53,10 @@ test("loads cleanly with useful defaults and a complete department key", async (
   );
   await expect(page.locator("#clear-filters")).toBeDisabled();
   await expect(page.locator("#zoom-results")).toBeDisabled();
+  await expect(
+    page.getByLabel("Local neighborhoods", { exact: true }),
+  ).toBeChecked();
+  await expect(page.locator("#layout-note")).toContainText("t-SNE");
   await expect(page.locator("#legend-summary")).toHaveText(
     "3 departments represented",
   );
@@ -190,6 +194,7 @@ test("uses the map as an edge-to-edge backdrop for floating controls", async ({
   expect(layout.legend.right).toBeLessThanOrEqual(layout.legendPanel.right);
   expect(layout.legendColumns.split(" ")).toHaveLength(1);
   expect(layout.legendOverflow).toBe("auto");
+  await expect(page.locator(".map-controls")).toBeVisible();
 });
 
 test("appearance control persists light, follows system, and redraws dark", async ({
@@ -424,8 +429,8 @@ test("layout changes geometry while preserving filters, color mode, and details"
   await expect(page.locator("#detail-panel")).toBeVisible();
   const firstLayout = await canvas.screenshot();
 
-  await page.getByText("Local neighborhoods", { exact: true }).click();
-  await expect(page.locator("#layout-note")).toContainText("t-SNE");
+  await page.getByText("Global structure", { exact: true }).click();
+  await expect(page.locator("#layout-note")).toContainText("PCA");
   await expect(page.locator("#selected-authors")).toContainText("Alice Adams");
   await expect(page.getByLabel("Faculty", { exact: true })).toBeChecked();
   await expect(page.locator("#detail-panel")).toBeVisible();
@@ -448,6 +453,10 @@ test("display, zoom, reset, clear, and canvas keyboard controls stay coherent", 
 
   const canvas = page.locator("#research-map");
   const initial = await canvas.screenshot();
+  await page.locator("#map-zoom-in").click();
+  const buttonZoomed = await canvas.screenshot();
+  expect(buttonZoomed.equals(initial)).toBe(false);
+  await page.locator("#map-fit").click();
   await canvas.focus();
   await canvas.press("+");
   await canvas.press("ArrowRight");
@@ -459,6 +468,35 @@ test("display, zoom, reset, clear, and canvas keyboard controls stay coherent", 
   await canvas.focus();
   await canvas.press("Escape");
   await expect(page.locator("#detail-panel")).toBeHidden();
+});
+
+test("mobile starts map-first and opens one panel at a time", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await openMap(page);
+
+  await expect(page.locator(".mobile-toolbar")).toBeVisible();
+  await expect(page.locator(".filter-panel")).toBeHidden();
+  await expect(page.locator(".legend-panel")).toBeHidden();
+  await expect(page.locator("#research-map")).toBeVisible();
+  await expect(page.locator(".map-controls")).toBeVisible();
+
+  const settings = page.locator("#toggle-filters");
+  const colorKey = page.locator("#toggle-legend");
+  await settings.click();
+  await expect(settings).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".filter-panel")).toBeVisible();
+  await expect(page.locator(".legend-panel")).toBeHidden();
+
+  await colorKey.click();
+  await expect(settings).toHaveAttribute("aria-expanded", "false");
+  await expect(colorKey).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".filter-panel")).toBeHidden();
+  await expect(page.locator(".legend-panel")).toBeVisible();
+
+  await colorKey.click();
+  await expect(page.locator(".legend-panel")).toBeHidden();
 });
 
 test("a transient artifact failure recovers automatically", async ({
@@ -558,13 +596,14 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     await openMap(page);
     const measurements = await page.evaluate(() => {
-      const filters = document
-        .querySelector(".filter-panel")
-        .getBoundingClientRect();
-      const legend = document
-        .querySelector(".legend-panel")
-        .getBoundingClientRect();
-      const surfacesOverlap = !(
+      const filterElement = document.querySelector(".filter-panel");
+      const legendElement = document.querySelector(".legend-panel");
+      const filters = filterElement.getBoundingClientRect();
+      const legend = legendElement.getBoundingClientRect();
+      const panelsVisible = [filterElement, legendElement].every(
+        (panel) => getComputedStyle(panel).visibility !== "hidden",
+      );
+      const surfacesOverlap = panelsVisible && !(
         filters.right <= legend.left ||
         legend.right <= filters.left ||
         filters.bottom <= legend.top ||
@@ -575,6 +614,7 @@ for (const viewport of [
           .querySelector("#research-map")
           .getBoundingClientRect().height,
         documentWidth: document.documentElement.scrollWidth,
+        panelsVisible,
         surfacesOverlap,
         viewportWidth: window.innerWidth,
       };
@@ -584,8 +624,18 @@ for (const viewport of [
     );
     expect(measurements.canvasHeight).toBeGreaterThan(300);
     expect(measurements.surfacesOverlap).toBe(false);
-    await expect(page.locator("#map-legend")).toBeVisible();
-    await expect(page.locator("#clear-filters")).toBeVisible();
+    if (viewport.width <= 680) {
+      expect(measurements.panelsVisible).toBe(false);
+      await expect(page.locator(".mobile-toolbar")).toBeVisible();
+      await page.locator("#toggle-filters").click();
+      await expect(page.locator("#clear-filters")).toBeVisible();
+      await page.locator("#toggle-legend").click();
+      await expect(page.locator("#map-legend")).toBeVisible();
+    } else {
+      expect(measurements.panelsVisible).toBe(true);
+      await expect(page.locator("#map-legend")).toBeVisible();
+      await expect(page.locator("#clear-filters")).toBeVisible();
+    }
   });
 }
 
