@@ -92,7 +92,14 @@ const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
 const filterPanel = document.querySelector(".filter-panel");
 const filterControls = document.querySelector(".filter-controls");
+const legendPanel = document.querySelector(".legend-panel");
 const mapColumn = document.querySelector(".map-column");
+const toggleFiltersButton = document.querySelector("#toggle-filters");
+const toggleLegendButton = document.querySelector("#toggle-legend");
+const mapControls = document.querySelector(".map-controls");
+const mapZoomInButton = document.querySelector("#map-zoom-in");
+const mapZoomOutButton = document.querySelector("#map-zoom-out");
+const mapFitButton = document.querySelector("#map-fit");
 const loadingOverlay = document.querySelector("#loading-overlay");
 const loadingProgress = document.querySelector("#loading-progress");
 const loadingProgressValue = document.querySelector("#loading-progress-value");
@@ -125,6 +132,44 @@ const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
 const detailLink = document.querySelector("#detail-link");
 const closeDetail = document.querySelector("#close-detail");
+const compactLayoutQuery = window.matchMedia("(max-width: 680px)");
+
+function setCompactPanel(openPanel = "") {
+  const compact = compactLayoutQuery.matches;
+  const filtersOpen = compact && openPanel === "filters";
+  const legendOpen = compact && openPanel === "legend";
+
+  filterPanel.classList.toggle("mobile-open", filtersOpen);
+  legendPanel.classList.toggle("mobile-open", legendOpen);
+  toggleFiltersButton.setAttribute("aria-expanded", String(filtersOpen));
+  toggleLegendButton.setAttribute("aria-expanded", String(legendOpen));
+
+  if (!compact) {
+    filterPanel.inert = false;
+    legendPanel.inert = false;
+    filterPanel.removeAttribute("aria-hidden");
+    legendPanel.removeAttribute("aria-hidden");
+    return;
+  }
+
+  filterPanel.inert = !filtersOpen;
+  legendPanel.inert = !legendOpen;
+  filterPanel.setAttribute("aria-hidden", String(!filtersOpen));
+  legendPanel.setAttribute("aria-hidden", String(!legendOpen));
+}
+
+function toggleCompactPanel(panelName) {
+  if (!compactLayoutQuery.matches) return;
+  const panel = panelName === "filters" ? filterPanel : legendPanel;
+  const shouldOpen = !panel.classList.contains("mobile-open");
+  setCompactPanel(shouldOpen ? panelName : "");
+  if (shouldOpen) {
+    detailPanel.hidden = true;
+    state.selectedWorkId = "";
+    tooltip.hidden = true;
+    scheduleDraw();
+  }
+}
 
 function normalizedText(value) {
   return core.normalizedText(value);
@@ -1144,6 +1189,18 @@ function resetView() {
   fitPoints(state.points);
 }
 
+function zoomView(multiplier) {
+  const previousScale = state.scale;
+  const nextScale = Math.min(25, Math.max(0.7, previousScale * multiplier));
+  if (nextScale === previousScale) return;
+  const ratio = nextScale / previousScale;
+  state.scale = nextScale;
+  state.offsetX *= ratio;
+  state.offsetY *= ratio;
+  tooltip.hidden = true;
+  scheduleDraw();
+}
+
 function fitPoints(points) {
   if (!points.length) return false;
   const bounds = canvas.getBoundingClientRect();
@@ -1191,6 +1248,7 @@ canvas.addEventListener(
 );
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (compactLayoutQuery.matches) setCompactPanel();
   state.dragging = true;
   state.dragX = event.clientX;
   state.dragY = event.clientY;
@@ -1337,6 +1395,25 @@ zoomResultsButton.addEventListener("click", () => {
   fitPoints(state.matchedPoints);
 });
 resetViewButton.addEventListener("click", resetView);
+mapZoomInButton.addEventListener("click", () => {
+  zoomView(1.25);
+  canvas.focus({ preventScroll: true });
+});
+mapZoomOutButton.addEventListener("click", () => {
+  zoomView(0.8);
+  canvas.focus({ preventScroll: true });
+});
+mapFitButton.addEventListener("click", () => {
+  resetView();
+  canvas.focus({ preventScroll: true });
+});
+toggleFiltersButton.addEventListener("click", () => {
+  toggleCompactPanel("filters");
+});
+toggleLegendButton.addEventListener("click", () => {
+  toggleCompactPanel("legend");
+});
+compactLayoutQuery.addEventListener("change", () => setCompactPanel());
 closeDetail.addEventListener("click", () => {
   detailPanel.hidden = true;
   state.selectedWorkId = "";
@@ -1520,6 +1597,9 @@ function setLoadingState() {
   statusElement.classList.remove("error", "warning");
   retryLoadButton.hidden = true;
   filterControls.inert = true;
+  mapControls.inert = true;
+  toggleFiltersButton.disabled = true;
+  toggleLegendButton.disabled = true;
   filterPanel.setAttribute("aria-busy", "true");
   mapColumn.setAttribute("aria-busy", "true");
   canvas.removeAttribute("aria-disabled");
@@ -1530,6 +1610,9 @@ function setReadyState() {
   loadingOverlay.hidden = true;
   retryLoadButton.hidden = true;
   filterControls.inert = false;
+  mapControls.inert = false;
+  toggleFiltersButton.disabled = false;
+  toggleLegendButton.disabled = false;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
 }
@@ -1546,6 +1629,9 @@ function setUnavailableState(error) {
   statusElement.classList.remove("warning");
   retryLoadButton.hidden = false;
   filterControls.inert = true;
+  mapControls.inert = true;
+  toggleFiltersButton.disabled = false;
+  toggleLegendButton.disabled = false;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
   canvas.setAttribute("aria-disabled", "true");
@@ -1595,7 +1681,9 @@ async function loadMap() {
     state.layoutById = new Map(
       state.layouts.map((layout) => [layout.layout_id, layout]),
     );
-    state.layoutId = artifact.default_layout_id;
+    state.layoutId = state.layoutById.has(config.default_layout_id)
+      ? config.default_layout_id
+      : artifact.default_layout_id;
     state.departmentById = new Map(
       state.departments.map((item) => [item.department_id, item]),
     );
@@ -1636,4 +1724,5 @@ async function loadMap() {
 }
 
 retryLoadButton.addEventListener("click", loadMap);
+setCompactPanel();
 loadMap();

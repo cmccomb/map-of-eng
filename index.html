@@ -23,7 +23,30 @@
   </head>
   <body>
     <main class="workspace">
+      <nav class="mobile-toolbar" aria-label="Map panels">
+        <span class="mobile-brand">CMU research map</span>
+        <button
+          id="toggle-filters"
+          type="button"
+          aria-controls="filter-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Settings
+        </button>
+        <button
+          id="toggle-legend"
+          type="button"
+          aria-controls="legend-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Color key
+        </button>
+      </nav>
+
       <aside
+        id="filter-panel"
         class="filter-panel"
         aria-label="Publication filters"
         aria-busy="true"
@@ -235,7 +258,11 @@
         aria-label="Research map workspace"
         aria-busy="true"
       >
-        <aside class="legend-panel" aria-labelledby="legend-title">
+        <aside
+          id="legend-panel"
+          class="legend-panel"
+          aria-labelledby="legend-title"
+        >
           <div class="legend-heading">
             <h3 id="legend-title">Color key</h3>
             <p id="legend-summary" aria-live="polite">Loading…</p>
@@ -289,10 +316,26 @@
             >
           </div>
           <div id="map-help" class="map-help">
-            <span>Scroll to zoom</span>
+            <span>Scroll or use +/− to zoom</span>
             <span>Drag to pan</span>
             <span>Click a point for details</span>
             <span>Keyboard: arrows, +/−, Enter</span>
+          </div>
+          <div
+            class="map-controls"
+            role="group"
+            aria-label="Map view controls"
+            inert
+          >
+            <button id="map-zoom-in" type="button" aria-label="Zoom in">
+              <span aria-hidden="true">+</span>
+            </button>
+            <button id="map-zoom-out" type="button" aria-label="Zoom out">
+              <span aria-hidden="true">−</span>
+            </button>
+            <button id="map-fit" type="button" aria-label="Fit all publications">
+              <span aria-hidden="true">⌂</span>
+            </button>
           </div>
         </div>
 

@@ -63,6 +63,7 @@ test("site build pins, validates, and stages the map artifact locally", async (t
     await fs.readFile(path.join(outputDirectory, "map-config.json"), "utf8"),
   );
   assert.equal(deployedConfig.dataset_revision, REVISION);
+  assert.equal(deployedConfig.default_layout_id, "tsne");
   assert.equal(
     deployedConfig.artifact_url,
     `data/publications.${REVISION}.json`,
