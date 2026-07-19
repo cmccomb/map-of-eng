@@ -24,8 +24,19 @@ resulting subset. Publications can also be colored by year or citation count.
 The year scale is linear across the central 98% of dated works; the citation
 scale is logarithmic through the 99th percentile. Explicit `≤` and `≥` legend
 endpoints retain outliers without letting them compress the rest of the corpus
-into one color. Point size adapts to result density so full-corpus structure and
-sparse searches both remain legible. Search dimensions combine with AND;
+into one color. Thirty overview keywords label the topical landscape directly
+on the map; approximately 120 smaller nested topics fade in as visitors zoom.
+Labels remain anchored to their precomputed centroids as visitors switch
+layouts, pan, zoom, or filter the corpus. Each publication detail card shows its
+overview-to-detail topic path.
+
+Visitors can keep dots uniform or size them by oldest publication, newest
+publication, or citation count. Year sizing uses the same robust central range
+as year coloring; citation sizing uses a logarithmic scale through the robust
+99th percentile. Unknown years stay small instead of being treated as old or
+new. Eight quantized radii preserve the canvas renderer's batched performance,
+and baseline point size still adapts to result density so full-corpus structure
+and sparse searches both remain legible. Search dimensions combine with AND;
 multiple values within a dimension combine with OR.
 
 The map remains the primary surface at every viewport size. Desktop controls
@@ -89,6 +100,7 @@ npm test
 ```
 
 The suite includes parser and color-generation checks plus browser coverage for
-filters, layouts, color keys, canvas controls, failure recovery, accessibility,
-responsive widths, and a production-sized 32,958-point artifact. GitHub Actions
-runs the same checks for every pull request and every push to `main`.
+filters, layouts, topical keywords, dot sizing, color keys, canvas controls,
+failure recovery, accessibility, responsive widths, and a production-sized
+artifact with more than 30,000 points. GitHub Actions runs the same checks for every pull
+request and every push to `main`.

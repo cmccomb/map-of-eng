@@ -269,12 +269,139 @@
     return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
   }
 
+  function parseKeywords(
+    items,
+    layouts,
+    { required = false, allowEmpty = false } = {},
+  ) {
+    if (!Array.isArray(items)) {
+      if (!required && items === undefined) {
+        return { items: [], ids: new Set(), byId: new Map() };
+      }
+      throw new ArtifactError("Artifact keywords must be an array");
+    }
+    if (required && !allowEmpty && !items.length) {
+      throw new ArtifactError("Artifact keywords must not be empty");
+    }
+    const seen = new Set();
+    const parsed = items.map((item, index) => {
+      if (!isObject(item)) {
+        throw new ArtifactError(`keywords[${index}] must be an object`);
+      }
+      const keywordId = requiredString(
+        item.keyword_id,
+        `keywords[${index}].keyword_id`,
+        { maxLength: 200 },
+      );
+      if (seen.has(keywordId)) {
+        throw new ArtifactError(`Duplicate keyword id: ${keywordId}`);
+      }
+      seen.add(keywordId);
+      const publicationCount = Number(item.publication_count);
+      if (!Number.isInteger(publicationCount) || publicationCount < 1) {
+        throw new ArtifactError(
+          `keywords[${index}].publication_count is invalid`,
+        );
+      }
+      if (!isObject(item.coordinates)) {
+        throw new ArtifactError(`keywords[${index}].coordinates is invalid`);
+      }
+      const coordinates = Object.create(null);
+      for (const layout of layouts) {
+        const pair = item.coordinates[layout.layout_id];
+        if (
+          !isObject(pair) ||
+          typeof pair.x !== "number" ||
+          typeof pair.y !== "number" ||
+          !Number.isFinite(pair.x) ||
+          !Number.isFinite(pair.y)
+        ) {
+          throw new ArtifactError(
+            `keywords[${index}] has invalid ${layout.layout_id} coordinates`,
+          );
+        }
+        coordinates[layout.layout_id] = { x: pair.x, y: pair.y };
+      }
+      const level = !required && item.level === undefined ? 0 : Number(item.level);
+      if (!Number.isInteger(level) || level < 0 || level > 8) {
+        throw new ArtifactError(`keywords[${index}].level is invalid`);
+      }
+      return {
+        ...item,
+        keyword_id: keywordId,
+        label: requiredString(item.label, `keywords[${index}].label`, {
+          maxLength: 160,
+        }),
+        level,
+        parent_keyword_id: optionalString(item.parent_keyword_id, {
+          maxLength: 200,
+        }),
+        publication_count: publicationCount,
+        coordinates,
+      };
+    });
+    const byId = new Map(parsed.map((item) => [item.keyword_id, item]));
+    for (const item of parsed) {
+      if (item.level === 0 && item.parent_keyword_id) {
+        throw new ArtifactError(`Keyword ${item.keyword_id} must not have a parent`);
+      }
+      if (item.level > 0) {
+        const parent = byId.get(item.parent_keyword_id);
+        if (!parent || parent.level !== item.level - 1) {
+          throw new ArtifactError(`Keyword ${item.keyword_id} has an invalid parent`);
+        }
+      }
+    }
+    return { items: parsed, ids: seen, byId };
+  }
+
+  function parseKeywordLevels(items, keywords, { required = false } = {}) {
+    if (!Array.isArray(items)) {
+      if (!required && items === undefined) {
+        return keywords.length
+          ? [
+              {
+                level: 0,
+                label: "Topic regions",
+                keyword_count: keywords.length,
+              },
+            ]
+          : [];
+      }
+      throw new ArtifactError("Artifact keyword_levels must be an array");
+    }
+    if (required && !items.length) {
+      throw new ArtifactError("Artifact keyword_levels must not be empty");
+    }
+    return items.map((item, index) => {
+      if (!isObject(item) || Number(item.level) !== index) {
+        throw new ArtifactError(`keyword_levels[${index}] is invalid`);
+      }
+      const keywordCount = Number(item.keyword_count);
+      const actualCount = keywords.filter((keyword) => keyword.level === index).length;
+      if (!Number.isInteger(keywordCount) || keywordCount !== actualCount) {
+        throw new ArtifactError(`keyword_levels[${index}].keyword_count is invalid`);
+      }
+      return {
+        ...item,
+        level: index,
+        label: requiredString(item.label, `keyword_levels[${index}].label`, {
+          maxLength: 160,
+        }),
+        keyword_count: keywordCount,
+      };
+    });
+  }
+
   function parsePoint(
     point,
     index,
     layouts,
     departmentIds,
     facultyIds,
+    keywords,
+    keywordLevels,
+    requireKeyword,
     seenWorkIds,
   ) {
     if (!isObject(point)) throw new ArtifactError(`points[${index}] is invalid`);
@@ -299,6 +426,45 @@
       coordinates[layout.layout_id] = { x, y };
     }
     const year = Number(point.year);
+    let keywordIds = [];
+    if (requireKeyword) {
+      keywordIds = knownIdArray(
+        point.keyword_ids,
+        keywords.ids,
+        `points[${index}].keyword_ids`,
+        { allowEmpty: false },
+      );
+      if (keywordIds.length !== keywordLevels.length) {
+        throw new ArtifactError(`points[${index}].keyword_ids is incomplete`);
+      }
+      const selectedByLevel = new Map();
+      for (const keywordId of keywordIds) {
+        const keyword = keywords.byId.get(keywordId);
+        if (selectedByLevel.has(keyword.level)) {
+          throw new ArtifactError(`points[${index}].keyword_ids repeats a level`);
+        }
+        selectedByLevel.set(keyword.level, keywordId);
+      }
+      for (const keywordId of keywordIds) {
+        const keyword = keywords.byId.get(keywordId);
+        if (
+          keyword.level > 0 &&
+          selectedByLevel.get(keyword.level - 1) !== keyword.parent_keyword_id
+        ) {
+          throw new ArtifactError(`points[${index}].keyword_ids breaks the hierarchy`);
+        }
+      }
+    } else {
+      const legacyKeywordId = optionalString(point.keyword_id, {
+        maxLength: 200,
+      });
+      if (legacyKeywordId) {
+        if (!keywords.ids.has(legacyKeywordId)) {
+          throw new ArtifactError(`points[${index}].keyword_id is unknown`);
+        }
+        keywordIds = [legacyKeywordId];
+      }
+    }
     const parsed = {
       ...point,
       work_id: workId,
@@ -326,6 +492,7 @@
       ),
       doi: optionalString(point.doi, { maxLength: 1000 }),
       source_url: safeHttpUrl(point.source_url),
+      keyword_ids: keywordIds,
       _title: normalizedText(point.title),
       _coordinates: coordinates,
     };
@@ -358,6 +525,16 @@
       idField: "person_id",
       labelField: "display_name",
     });
+    const requireKeywords = artifact.schema_version >= 6;
+    const keywords = parseKeywords(artifact.keywords, layouts, {
+      required: requireKeywords,
+      allowEmpty: artifact.points.length === 0,
+    });
+    const keywordLevels = parseKeywordLevels(
+      artifact.keyword_levels,
+      keywords.items,
+      { required: requireKeywords },
+    );
     const seenWorkIds = new Set();
     const points = [];
     const omissionReasons = new Map();
@@ -370,6 +547,9 @@
             layouts,
             departments.ids,
             faculty.ids,
+            keywords,
+            keywordLevels,
+            requireKeywords,
             seenWorkIds,
           ),
         );
@@ -400,6 +580,8 @@
         departments: departments.items,
         faculty: faculty.items,
       },
+      keywords: keywords.items,
+      keyword_levels: keywordLevels,
       points,
       omitted_point_count: omittedPointCount,
       omission_reasons: omissionReasons,

@@ -61,13 +61,18 @@ function makePoint(row, index) {
     observation_count: index % 2 ? 2 : 1,
     doi: `10.1000/example.${index + 1}`,
     source_url: `https://example.org/publication/${index + 1}`,
+    keyword_ids: [
+      `keyword-${(index % 3) + 1}`,
+      `keyword-${(index % 3) + 1}-${index < 6 ? Math.floor(index / 3) + 1 : 1}`,
+    ],
   };
 }
 
 function makeArtifact() {
   const points = pointRows.map(makePoint);
   return {
-    schema_version: 4,
+    schema_version: 6,
+    keyword_model_version: "fixture-keywords-v1",
     point_count: points.length,
     source_data_newest_at_utc: "2026-07-17T00:00:00Z",
     default_layout_id: "pca",
@@ -76,6 +81,63 @@ function makeArtifact() {
       departments: departments.map((item) => ({ ...item })),
       faculty: faculty.map((item) => ({ ...item })),
     },
+    keyword_levels: [
+      { level: 0, label: "Topic regions", keyword_count: 3 },
+      { level: 1, label: "Detailed topics", keyword_count: 6 },
+    ],
+    keywords: [
+      {
+        keyword_id: "keyword-1",
+        label: "robotic design",
+        level: 0,
+        parent_keyword_id: null,
+        publication_count: 3,
+        coordinates: {
+          pca: { x: -0.1, y: 0.12 },
+          tsne: { x: 0.1, y: -0.05 },
+        },
+      },
+      {
+        keyword_id: "keyword-2",
+        label: "energy systems",
+        level: 0,
+        parent_keyword_id: null,
+        publication_count: 3,
+        coordinates: {
+          pca: { x: 0.2, y: -0.1 },
+          tsne: { x: -0.15, y: 0.18 },
+        },
+      },
+      {
+        keyword_id: "keyword-3",
+        label: "biomedical interfaces",
+        level: 0,
+        parent_keyword_id: null,
+        publication_count: 2,
+        coordinates: {
+          pca: { x: 0.45, y: -0.35 },
+          tsne: { x: 0.58, y: 0.5 },
+        },
+      },
+      ...[
+        ["keyword-1-1", "robot control", "keyword-1", -0.5, 0.65],
+        ["keyword-1-2", "design collaboration", "keyword-1", -0.12, 0.08],
+        ["keyword-2-1", "soft systems", "keyword-2", 0.05, -0.2],
+        ["keyword-2-2", "neural interfaces", "keyword-2", 0.56, -0.48],
+        ["keyword-3-1", "battery health", "keyword-3", 0.72, 0.65],
+        ["keyword-3-2", "power grid", "keyword-3", 0.82, 0.18],
+      ].map(([keywordId, label, parentId, x, y]) => ({
+        keyword_id: keywordId,
+        label,
+        level: 1,
+        parent_keyword_id: parentId,
+        publication_count: 1,
+        coordinates: {
+          pca: { x, y },
+          tsne: { x: -x, y: -y },
+        },
+      })),
+    ],
     points,
     additive_metadata: { accepted: true },
   };
