@@ -10,6 +10,8 @@ const {
   buildSite,
   configuredDatasetRevision,
   datasetRevisionUrl,
+  formatLabelCalibrationReport,
+  labelCalibrationReport,
 } = require("../scripts/build-site.js");
 const { makeArtifact } = require("./fixtures/artifact.js");
 
@@ -70,6 +72,10 @@ test("site build pins, validates, and stages the map artifact locally", async (t
   );
   assert.match(deployedConfig.artifact_sha256, /^[0-9a-f]{64}$/);
   assert.equal(deployedConfig.artifact_bytes, result.artifact_bytes);
+  assert.equal(
+    deployedConfig.label_calibration_url,
+    `data/label-calibration.${REVISION}.json`,
+  );
   const deployedArtifact = JSON.parse(
     await fs.readFile(
       path.join(outputDirectory, deployedConfig.artifact_url),
@@ -83,6 +89,23 @@ test("site build pins, validates, and stages the map artifact locally", async (t
   );
   assert.match(deployedHtml, /assets\/theme\.js\?v=fedcba987654/);
   assert.match(deployedHtml, /assets\/map\.js\?v=fedcba987654/);
+  const deployedCalibration = JSON.parse(
+    await fs.readFile(
+      path.join(outputDirectory, deployedConfig.label_calibration_url),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(deployedCalibration, result.label_calibration);
+  assert.equal(deployedCalibration.layout_id, "tsne");
+  assert.equal(deployedCalibration.point_count, artifact.point_count);
+  assert.ok(
+    deployedCalibration.overview.promoted_count <=
+      deployedCalibration.overview.promotion_limit,
+  );
+  assert.ok(
+    deployedCalibration.active_faculty_views.maximum_promotions <=
+      deployedCalibration.active_faculty_views.promotion_limit,
+  );
 });
 
 test("site build refuses mutable or malformed revision metadata", async () => {
@@ -108,4 +131,54 @@ test("revision check resolves metadata without downloading the artifact", async 
   assert.equal(revision, REVISION);
   assert.equal(requestedUrls.length, 1);
   assert.match(requestedUrls[0], /\/api\/datasets\//);
+});
+
+test("label calibration exposes bounded overview and active-view drift diagnostics", () => {
+  const artifact = makeArtifact();
+  artifact.catalogs.faculty.push({
+    person_id: "f-idle",
+    display_name: "Idle Faculty",
+    publication_count: 0,
+  });
+  const report = labelCalibrationReport(core.parseArtifact(artifact));
+  assert.deepEqual(
+    {
+      broad_topic_count: report.broad_topic_count,
+      detailed_topic_count: report.detailed_topic_count,
+      layout_id: report.layout_id,
+      point_count: report.point_count,
+      schema_version: report.schema_version,
+    },
+    {
+      broad_topic_count: 3,
+      detailed_topic_count: 6,
+      layout_id: "tsne",
+      point_count: 8,
+      schema_version: 1,
+    },
+  );
+  assert.deepEqual(report.overview, {
+    promotion_limit: 3,
+    minimum_support: 50,
+    promoted_count: 0,
+    promoted_topics: [],
+    next_supported_candidate: null,
+  });
+  assert.deepEqual(report.active_faculty_views, {
+    promotion_limit: 4,
+    view_count: 4,
+    zero_promotion_views: 4,
+    median_promotions: 0,
+    p90_promotions: 0,
+    maximum_promotions: 0,
+    views_at_limit: 0,
+  });
+  assert.deepEqual(
+    formatLabelCalibrationReport(report, "data/calibration.json"),
+    [
+      "Labels: 0/3 overview promotions on tsne: none.",
+      "Active-label drift: 4 faculty views; median 0, p90 0, max 0/4; 0 at the limit.",
+      "Calibration report: data/calibration.json",
+    ],
+  );
 });

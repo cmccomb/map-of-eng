@@ -8,6 +8,14 @@
   const MAX_LAYOUTS = 8;
   const MAX_POINTS = 500000;
   const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
+  const OVERVIEW_TOPIC_MIN_ISOLATION = 3.5;
+  const OVERVIEW_TOPIC_LIMIT = 3;
+  const ACTIVE_TOPIC_MIN_SHARE = 0.05;
+  const ACTIVE_TOPIC_PARENT_DOMINANCE = 0.65;
+  const ACTIVE_TOPIC_LIMIT = 4;
+  const MAX_URL_STATE_VALUES = 64;
+  const MAX_URL_STATE_LENGTH = 8192;
+  const MAX_URL_STATE_VALUE_LENGTH = 500;
   const FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
   const DATASET_ID_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
@@ -591,7 +599,14 @@
 
   function pointMatches(
     point,
-    { titleQueries = [], departmentIds = new Set(), facultyIds = new Set() } = {},
+    {
+      titleQueries = [],
+      departmentIds = new Set(),
+      facultyIds = new Set(),
+      keywordIds = new Set(),
+      yearMin = null,
+      yearMax = null,
+    } = {},
   ) {
     if (
       titleQueries.length &&
@@ -608,7 +623,122 @@
     if (facultyIds.size && !point.faculty_ids.some((id) => facultyIds.has(id))) {
       return false;
     }
+    if (
+      keywordIds.size &&
+      !point.keyword_ids.some((id) => keywordIds.has(id))
+    ) {
+      return false;
+    }
+    const yearFiltered = Number.isFinite(yearMin) || Number.isFinite(yearMax);
+    if (yearFiltered && !Number.isFinite(point.year)) return false;
+    if (Number.isFinite(yearMin) && point.year < yearMin) return false;
+    if (Number.isFinite(yearMax) && point.year > yearMax) return false;
     return true;
+  }
+
+  function incrementFacetCounts(counts, ids) {
+    if (!Array.isArray(ids)) return;
+    for (const id of new Set(ids)) {
+      counts.set(id, (counts.get(id) || 0) + 1);
+    }
+  }
+
+  function contextualFacetCounts(points, filters = {}) {
+    const facultyCounts = new Map();
+    const departmentCounts = new Map();
+    const keywordCounts = new Map();
+    if (!Array.isArray(points)) {
+      return { facultyCounts, departmentCounts, keywordCounts };
+    }
+    const withoutFaculty = { ...filters, facultyIds: new Set() };
+    const withoutDepartments = { ...filters, departmentIds: new Set() };
+    const withoutKeywords = { ...filters, keywordIds: new Set() };
+    for (const point of points) {
+      if (pointMatches(point, withoutFaculty)) {
+        incrementFacetCounts(facultyCounts, point.faculty_ids);
+      }
+      if (pointMatches(point, withoutDepartments)) {
+        incrementFacetCounts(departmentCounts, point.department_ids);
+      }
+      if (pointMatches(point, withoutKeywords)) {
+        incrementFacetCounts(keywordCounts, point.keyword_ids);
+      }
+    }
+    return { facultyCounts, departmentCounts, keywordCounts };
+  }
+
+  function stateValues(value, { normalize = false } = {}) {
+    const candidates =
+      value instanceof Set ? [...value] : Array.isArray(value) ? value : [];
+    const values = [];
+    const seen = new Set();
+    for (const candidate of candidates) {
+      if (typeof candidate !== "string") continue;
+      const parsed = normalize
+        ? normalizedText(candidate)
+        : candidate.trim().slice(0, MAX_URL_STATE_VALUE_LENGTH);
+      if (!parsed || parsed.length > MAX_URL_STATE_VALUE_LENGTH || seen.has(parsed)) {
+        continue;
+      }
+      seen.add(parsed);
+      values.push(parsed);
+      if (values.length >= MAX_URL_STATE_VALUES) break;
+    }
+    return values;
+  }
+
+  function validStateYear(value) {
+    const year = Number(value);
+    return Number.isInteger(year) && year >= 1000 && year <= 3000 ? year : null;
+  }
+
+  function serializeMapState(state = {}) {
+    const params = new URLSearchParams();
+    const collections = [
+      ["q", stateValues(state.titleQueries, { normalize: true })],
+      ["d", stateValues(state.departmentIds)],
+      ["f", stateValues(state.facultyIds)],
+      ["t", stateValues(state.keywordIds)],
+    ];
+    for (const [key, values] of collections) {
+      for (const value of values) params.append(key, value);
+    }
+    const yearMin = validStateYear(state.yearMin);
+    const yearMax = validStateYear(state.yearMax);
+    if (yearMin !== null) params.set("ymin", String(yearMin));
+    if (yearMax !== null) params.set("ymax", String(yearMax));
+    for (const [key, value] of [
+      ["layout", state.layoutId],
+      ["color", state.colorMode],
+      ["size", state.sizeMode],
+      ["display", state.displayMode],
+    ]) {
+      const parsed = stateValues([value])[0];
+      if (parsed) params.set(key, parsed);
+    }
+    return params.toString();
+  }
+
+  function parseMapState(search = "") {
+    const source = typeof search === "string" ? search : String(search || "");
+    const params =
+      source.length <= MAX_URL_STATE_LENGTH
+        ? new URLSearchParams(source.startsWith("?") ? source.slice(1) : source)
+        : new URLSearchParams();
+    const values = (key, options) => stateValues(params.getAll(key), options);
+    const scalar = (key) => stateValues([params.get(key)])[0] || "";
+    return {
+      titleQueries: values("q", { normalize: true }),
+      departmentIds: values("d"),
+      facultyIds: values("f"),
+      keywordIds: values("t"),
+      yearMin: validStateYear(params.get("ymin")),
+      yearMax: validStateYear(params.get("ymax")),
+      layoutId: scalar("layout"),
+      colorMode: scalar("color"),
+      sizeMode: scalar("size"),
+      displayMode: scalar("display"),
+    };
   }
 
   function preferredId(ids, activeIds, availableIds) {
@@ -619,28 +749,251 @@
     );
   }
 
+  function keywordCoordinates(keyword, layoutId) {
+    const coordinates =
+      keyword?._coordinates instanceof Map
+        ? keyword._coordinates.get(layoutId)
+        : keyword?.coordinates?.[layoutId];
+    return coordinates &&
+      Number.isFinite(coordinates.x) &&
+      Number.isFinite(coordinates.y)
+      ? coordinates
+      : null;
+  }
+
+  function buildKeywordLabelPlan(
+    keywords,
+    points,
+    { layoutId = "", filtersActive = false } = {},
+  ) {
+    if (!Array.isArray(keywords) || !Array.isArray(points)) return [];
+    const byId = new Map(keywords.map((keyword) => [keyword.keyword_id, keyword]));
+    const activity = new Map();
+    for (const point of points) {
+      if (!Array.isArray(point.keyword_ids)) continue;
+      for (const keywordId of point.keyword_ids) {
+        if (!byId.has(keywordId)) continue;
+        const existing = activity.get(keywordId) || {
+          count: 0,
+          positionCount: 0,
+          spreadSquared: 0,
+          x: 0,
+          y: 0,
+        };
+        existing.count += 1;
+        if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+          existing.positionCount += 1;
+          existing.x += point.x;
+          existing.y += point.y;
+          const coordinates = keywordCoordinates(byId.get(keywordId), layoutId);
+          if (coordinates) {
+            existing.spreadSquared +=
+              (point.x - coordinates.x) ** 2 +
+              (point.y - coordinates.y) ** 2;
+          }
+        }
+        activity.set(keywordId, existing);
+      }
+    }
+
+    const promoted = new Map();
+    const demoted = new Set();
+
+    if (filtersActive && points.length) {
+      const minimumActiveSupport = Math.max(
+        4,
+        Math.ceil(points.length * ACTIVE_TOPIC_MIN_SHARE),
+      );
+      const activeCandidates = [];
+      for (const parent of keywords.filter((keyword) => keyword.level === 0)) {
+        const parentCount = activity.get(parent.keyword_id)?.count || 0;
+        if (!parentCount) continue;
+        const children = keywords
+          .filter((keyword) => keyword.parent_keyword_id === parent.keyword_id)
+          .sort(
+            (left, right) =>
+              (activity.get(right.keyword_id)?.count || 0) -
+                (activity.get(left.keyword_id)?.count || 0) ||
+              left.label.localeCompare(right.label),
+          );
+        const dominant = children[0];
+        const dominantCount = activity.get(dominant?.keyword_id)?.count || 0;
+        if (
+          dominant &&
+          dominantCount >= minimumActiveSupport &&
+          dominantCount / parentCount >= ACTIVE_TOPIC_PARENT_DOMINANCE
+        ) {
+          activeCandidates.push({
+            child: dominant,
+            count: dominantCount,
+            dominance: dominantCount / parentCount,
+            parent,
+          });
+        }
+      }
+      activeCandidates
+        .sort(
+          (left, right) =>
+            right.count - left.count ||
+            right.dominance - left.dominance ||
+            left.child.label.localeCompare(right.child.label),
+        )
+        .slice(0, ACTIVE_TOPIC_LIMIT)
+        .forEach(({ child, parent }) => {
+          promoted.set(child.keyword_id, "active");
+          demoted.add(parent.keyword_id);
+        });
+    } else if (layoutId === "tsne") {
+      const minimumOverviewSupport = Math.max(50, Math.ceil(points.length * 0.003));
+      const details = keywords
+        .filter((keyword) => keyword.level === 1)
+        .map((keyword) => ({
+          keyword,
+          coordinates: keywordCoordinates(keyword, layoutId),
+        }))
+        .filter((item) => item.coordinates);
+      details
+        .map(({ keyword, coordinates }) => {
+          const totals = activity.get(keyword.keyword_id);
+          let nearestDistance = Infinity;
+          for (const candidate of details) {
+            if (candidate.keyword === keyword) continue;
+            nearestDistance = Math.min(
+              nearestDistance,
+              Math.hypot(
+                coordinates.x - candidate.coordinates.x,
+                coordinates.y - candidate.coordinates.y,
+              ),
+            );
+          }
+          if (!Number.isFinite(nearestDistance)) nearestDistance = 0;
+          const radius = totals?.positionCount
+            ? Math.sqrt(totals.spreadSquared / totals.positionCount)
+            : Infinity;
+          return {
+            keyword,
+            count: totals?.count || 0,
+            isolation: nearestDistance / Math.max(radius, 0.001),
+          };
+        })
+        .filter(
+          (candidate) =>
+            candidate.count >= minimumOverviewSupport &&
+            candidate.isolation >= OVERVIEW_TOPIC_MIN_ISOLATION,
+        )
+        .sort(
+          (left, right) =>
+            right.isolation - left.isolation ||
+            right.count - left.count ||
+            left.keyword.label.localeCompare(right.keyword.label),
+        )
+        .slice(0, OVERVIEW_TOPIC_LIMIT)
+        .forEach(({ keyword }) => {
+          promoted.set(keyword.keyword_id, "isolation");
+        });
+    }
+
+    return keywords.map((keyword) => {
+      const totals = activity.get(keyword.keyword_id) || {
+        count: 0,
+        positionCount: 0,
+        spreadSquared: 0,
+        x: 0,
+        y: 0,
+      };
+      const coordinates = keywordCoordinates(keyword, layoutId) || { x: 0, y: 0 };
+      const useActiveCentroid = filtersActive && totals.positionCount > 0;
+      const promotion = promoted.get(keyword.keyword_id) || "";
+      return {
+        ...keyword,
+        activity_count: totals.count,
+        effective_level: promotion ? 0 : demoted.has(keyword.keyword_id) ? 1 : keyword.level,
+        promotion,
+        x: useActiveCentroid ? totals.x / totals.positionCount : coordinates.x,
+        y: useActiveCentroid ? totals.y / totals.positionCount : coordinates.y,
+      };
+    });
+  }
+
   function baseScale(width, height) {
     const margin = 34;
     return Math.max(1, Math.min(width - margin * 2, height - margin * 2) / 2);
   }
 
-  function fitView(points, width, height) {
+  function median(values) {
+    const sorted = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function pointBounds(points, { centralFraction = 1 } = {}) {
     if (!Array.isArray(points) || !points.length) return null;
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-      throw new TypeError("Canvas dimensions must be positive numbers");
+    if (
+      !Number.isFinite(centralFraction) ||
+      centralFraction <= 0 ||
+      centralFraction > 1
+    ) {
+      throw new RangeError("centralFraction must be greater than 0 and at most 1");
+    }
+    const finitePoints = points.filter(
+      (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
+    );
+    if (!finitePoints.length) return null;
+    const includedCount = Math.max(
+      1,
+      Math.ceil(finitePoints.length * centralFraction),
+    );
+    let includedPoints = finitePoints;
+    if (includedCount < finitePoints.length) {
+      const centerX = median(finitePoints.map((point) => point.x));
+      const centerY = median(finitePoints.map((point) => point.y));
+      includedPoints = finitePoints
+        .map((point, index) => ({
+          index,
+          point,
+          distanceSquared:
+            (point.x - centerX) ** 2 + (point.y - centerY) ** 2,
+        }))
+        .sort(
+          (left, right) =>
+            left.distanceSquared - right.distanceSquared ||
+            left.index - right.index,
+        )
+        .slice(0, includedCount)
+        .map((item) => item.point);
     }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-    for (const point of points) {
-      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+    for (const point of includedPoints) {
       minX = Math.min(minX, point.x);
       maxX = Math.max(maxX, point.x);
       minY = Math.min(minY, point.y);
       maxY = Math.max(maxY, point.y);
     }
-    if (!Number.isFinite(minX)) return null;
+    return {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      centralFraction,
+      pointCount: finitePoints.length,
+      includedCount,
+      excludedCount: finitePoints.length - includedCount,
+    };
+  }
+
+  function fitView(points, width, height, { centralFraction = 1 } = {}) {
+    if (!Array.isArray(points) || !points.length) return null;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      throw new TypeError("Canvas dimensions must be positive numbers");
+    }
+    const bounds = pointBounds(points, { centralFraction });
+    if (!bounds) return null;
+    const { minX, maxX, minY, maxY } = bounds;
     const rangeX = Math.max(maxX - minX, 0.04);
     const rangeY = Math.max(maxY - minY, 0.04);
     const padding = 28;
@@ -661,6 +1014,9 @@
       scale,
       offsetX: -centerX * unitScale * scale,
       offsetY: centerY * unitScale * scale,
+      centralFraction: bounds.centralFraction,
+      includedCount: bounds.includedCount,
+      excludedCount: bounds.excludedCount,
     };
   }
 
@@ -680,13 +1036,18 @@
     ArtifactError,
     artifactUrl,
     baseScale,
+    buildKeywordLabelPlan,
+    contextualFacetCounts,
     fitView,
     formatUtcDate,
     normalizedText,
     parseArtifact,
     parseConfig,
+    parseMapState,
+    pointBounds,
     pointMatches,
     preferredId,
     safeHttpUrl,
+    serializeMapState,
   };
 });
