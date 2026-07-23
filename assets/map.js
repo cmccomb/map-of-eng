@@ -602,20 +602,8 @@ function keywordLabelBox(x, y, textWidth, fontSize) {
 }
 
 function placeKeywordLabel(keyword, textWidth, width, height, occlusions, placed) {
-  const halfWidth = textWidth / 2 + 7;
-  const halfHeight = keyword.fontSize / 2 + 5;
   const candidates = [{ x: keyword.x, y: keyword.y }];
-  if (keyword.promotion) {
-    for (const rectangle of occlusions) {
-      candidates.push(
-        { x: rectangle.right + halfWidth + 5, y: keyword.y },
-        { x: rectangle.left - halfWidth - 5, y: keyword.y },
-        { x: keyword.x, y: rectangle.bottom + halfHeight + 5 },
-        { x: keyword.x, y: rectangle.top - halfHeight - 5 },
-      );
-    }
-  }
-  if (keyword.promotion || keyword.effective_level > 0) {
+  if (keyword.effective_level > 0 || state.filtersActive) {
     const step = keyword.fontSize + 10;
     candidates.push(
       { x: keyword.x, y: keyword.y - step },
@@ -665,7 +653,7 @@ function drawKeywordLabels(width, height) {
   state.keywordLabelBoxes = [];
   if (!state.keywordLabelPlan.length) {
     canvas.dataset.visibleKeywordLevels = "";
-    canvas.dataset.promotedKeywords = "";
+    canvas.dataset.overviewKeywords = "";
     return;
   }
   const unitScale = baseScale(width, height);
@@ -676,9 +664,8 @@ function drawKeywordLabels(width, height) {
           keyword.effective_level === 0
             ? 0
             : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.effective_level - 1);
-        const minimumMatches = keyword.promotion
-          ? Math.max(3, Math.ceil(state.matchedPoints.length * 0.03))
-          : keyword.effective_level === 0
+        const minimumMatches =
+          keyword.effective_level === 0
             ? Math.max(3, Math.ceil(state.matchedPoints.length * 0.05))
             : Math.max(2, Math.ceil(state.matchedPoints.length * 0.02));
         return (
@@ -724,7 +711,6 @@ function drawKeywordLabels(width, height) {
     .sort(
       (left, right) =>
         left.effective_level - right.effective_level ||
-        Number(Boolean(right.promotion)) - Number(Boolean(left.promotion)) ||
         right.activity_count - left.activity_count ||
         left.label.localeCompare(right.label),
     );
@@ -735,7 +721,7 @@ function drawKeywordLabels(width, height) {
   const occlusions = keywordLabelOcclusions();
   const placed = [];
   const placedLevels = new Set();
-  const promotedKeywords = [];
+  const overviewKeywords = [];
   for (const keyword of candidates) {
     context.font = `${keyword.effective_level === 0 ? 650 : 560} ${keyword.fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
     const textWidth = context.measureText(keyword.label).width;
@@ -752,7 +738,9 @@ function drawKeywordLabels(width, height) {
     placed.push(placement.box);
     state.keywordLabelBoxes.push({ box: placement.box, keyword });
     placedLevels.add(keyword.effective_level);
-    if (keyword.promotion) promotedKeywords.push(keyword.keyword_id);
+    if (keyword.effective_level === 0) {
+      overviewKeywords.push(keyword.keyword_id);
+    }
     context.globalAlpha = keyword.opacity;
     if (Math.hypot(x - keyword.x, y - keyword.y) > 4) {
       context.beginPath();
@@ -771,17 +759,15 @@ function drawKeywordLabels(width, height) {
     );
     context.fillStyle = themeColor("--keyword-background", "#091621dc");
     context.fill();
-    context.strokeStyle = keyword.promotion
-      ? themeColor("--accent", "#62c8e8")
-      : themeColor("--keyword-border", "#8fa5b540");
-    context.lineWidth = keyword.promotion ? 1.15 : 0.75;
+    context.strokeStyle = themeColor("--keyword-border", "#8fa5b540");
+    context.lineWidth = 0.75;
     context.stroke();
     context.fillStyle = themeColor("--keyword-text", "#eef5f8");
     context.fillText(keyword.label, x, y + 0.25);
   }
   context.restore();
   canvas.dataset.visibleKeywordLevels = [...placedLevels].sort().join(",");
-  canvas.dataset.promotedKeywords = promotedKeywords.join(",");
+  canvas.dataset.overviewKeywords = overviewKeywords.join(",");
 }
 
 function draw() {
@@ -1537,9 +1523,10 @@ function updateTopicSelectionNote() {
   const planned = state.keywordLabelPlan.find(
     (candidate) => candidate.keyword_id === keywordId,
   );
-  const levelLabel = keyword.level > 0 ? "Detailed topic" : "Overview topic";
-  const promotionLabel = planned?.promotion ? " · promoted in this view" : "";
-  topicSelectionNote.textContent = `${levelLabel} · ${keywordDescription(keyword)} · ${count.toLocaleString()} match${count === 1 ? "" : "es"}${promotionLabel}`;
+  const effectiveLevel = planned?.effective_level ?? keyword.level;
+  const levelLabel =
+    effectiveLevel > 0 ? "Detailed topic" : "Overview topic";
+  topicSelectionNote.textContent = `${levelLabel} · ${keywordDescription(keyword)} · ${count.toLocaleString()} match${count === 1 ? "" : "es"}`;
   topicSelectionNote.hidden = false;
 }
 
@@ -2039,13 +2026,7 @@ function showTooltip(event) {
     heading.textContent = keyword.label;
     const details = document.createElement("span");
     const kind =
-      keyword.promotion === "isolation"
-        ? "Promoted detailed island"
-        : keyword.promotion === "active"
-          ? "Promoted for these filters"
-          : keyword.level > 0
-            ? "Detailed topic"
-            : "Overview topic";
+      keyword.effective_level > 0 ? "Detailed topic" : "Overview topic";
     const count = Number(keyword.activity_count || keyword.publication_count || 0);
     details.textContent = `${kind} · ${keywordDescription(keyword)} · ${count.toLocaleString()} publication${count === 1 ? "" : "s"} · click to filter`;
     tooltip.append(heading, details);
