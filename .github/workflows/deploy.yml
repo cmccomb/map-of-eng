@@ -1,15 +1,6 @@
 name: Deploy research map
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - index.html
-      - map-config.json
-      - assets/**
-      - scripts/**
-      - package.json
-      - .github/workflows/deploy.yml
   schedule:
     - cron: "17 10 * * *"
   repository_dispatch:
@@ -28,7 +19,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -37,6 +28,11 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
       - name: Check whether scheduled data are new
         id: freshness
         env:
@@ -65,6 +61,27 @@ jobs:
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Check JavaScript syntax
+        if: steps.freshness.outputs.deploy == 'true'
+        run: node --check assets/theme.js && node --check assets/colors.js && node --check assets/map-core.js && node --check assets/map.js && node --check scripts/build-site.js
+      - name: Validate map configuration
+        if: steps.freshness.outputs.deploy == 'true'
+        run: node -e 'require("./assets/map-core.js").parseConfig(require("./map-config.json"))'
+      - name: Confirm static site files
+        if: steps.freshness.outputs.deploy == 'true'
+        run: test -s index.html && test -s assets/map.css && test -s assets/theme.js && test -s assets/colors.js && test -s assets/map-core.js && test -s assets/map.js
+      - name: Install pinned test dependencies
+        if: steps.freshness.outputs.deploy == 'true'
+        run: npm ci
+      - name: Run core tests
+        if: steps.freshness.outputs.deploy == 'true'
+        run: npm run test:unit
+      - name: Install tested browsers
+        if: steps.freshness.outputs.deploy == 'true'
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run browser tests
+        if: steps.freshness.outputs.deploy == 'true'
+        run: npm run test:e2e
       - name: Stage the pinned, same-origin site
         if: steps.freshness.outputs.deploy == 'true'
         run: node scripts/build-site.js

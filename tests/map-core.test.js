@@ -482,6 +482,124 @@ test("filter matching is OR within dimensions and AND across dimensions", () => 
     core.pointMatches(point, { facultyIds: new Set(["f-bob"]) }),
     false,
   );
+
+  const topicIds = artifact.points
+    .filter((candidate) =>
+      core.pointMatches(candidate, {
+        keywordIds: new Set(["keyword-1", "keyword-2-2"]),
+      }),
+    )
+    .map((candidate) => candidate.work_id);
+  assert.deepEqual(topicIds, ["p1", "p4", "p5", "p7"]);
+
+  const yearIds = artifact.points
+    .filter((candidate) =>
+      core.pointMatches(candidate, { yearMin: 2020, yearMax: 2022 }),
+    )
+    .map((candidate) => candidate.work_id);
+  assert.deepEqual(yearIds, ["p3", "p4", "p5"]);
+  assert.equal(
+    core.pointMatches(artifact.points[0], {
+      keywordIds: new Set(["keyword-2"]),
+    }),
+    false,
+  );
+  assert.equal(
+    core.pointMatches({ ...artifact.points[0], year: null }, { yearMin: 2018 }),
+    false,
+  );
+  assert.equal(
+    core.pointMatches(artifact.points[0], { yearMin: 2018, yearMax: 2018 }),
+    true,
+  );
+  assert.equal(
+    core.pointMatches(artifact.points[0], { yearMin: 2020, yearMax: 2019 }),
+    false,
+  );
+});
+
+test("contextual facet counts ignore only their own active dimension", () => {
+  const points = core.parseArtifact(makeArtifact()).points;
+  const counts = core.contextualFacetCounts(points, {
+    departmentIds: new Set(["d-me"]),
+    facultyIds: new Set(["f-alice"]),
+    keywordIds: new Set(["keyword-1"]),
+    yearMin: 2018,
+    yearMax: 2024,
+  });
+
+  assert.deepEqual([...counts.facultyCounts], [
+    ["f-alice", 2],
+    ["f-bob", 1],
+    ["f-dan", 1],
+  ]);
+  assert.deepEqual([...counts.departmentCounts], [["d-me", 2]]);
+  assert.deepEqual([...counts.keywordCounts], [
+    ["keyword-1", 2],
+    ["keyword-1-1", 1],
+    ["keyword-2", 1],
+    ["keyword-2-1", 1],
+    ["keyword-1-2", 1],
+  ]);
+
+  const malformedCounts = core.contextualFacetCounts(
+    [
+      {
+        _title: "publication",
+        faculty_ids: ["faculty", "faculty"],
+        department_ids: null,
+        keyword_ids: ["topic", "topic"],
+        year: 2024,
+      },
+    ],
+    {},
+  );
+  assert.equal(malformedCounts.facultyCounts.get("faculty"), 1);
+  assert.equal(malformedCounts.departmentCounts.size, 0);
+  assert.equal(malformedCounts.keywordCounts.get("topic"), 1);
+  assert.deepEqual(core.contextualFacetCounts(null), {
+    facultyCounts: new Map(),
+    departmentCounts: new Map(),
+    keywordCounts: new Map(),
+  });
+});
+
+test("map state helpers serialize compact stable filters and parse defensively", () => {
+  const serialized = core.serializeMapState({
+    titleQueries: ["  ROBOT  ", "robot", "battery"],
+    departmentIds: new Set(["d-me", "d-ece"]),
+    facultyIds: ["f-alice", "", "f-bob"],
+    keywordIds: ["keyword-1", "keyword-1"],
+    yearMin: 2018,
+    yearMax: 2025,
+    layoutId: "tsne",
+    colorMode: "faculty",
+    sizeMode: "citations",
+    displayMode: "show",
+  });
+  assert.deepEqual(core.parseMapState(`?${serialized}`), {
+    titleQueries: ["robot", "battery"],
+    departmentIds: ["d-me", "d-ece"],
+    facultyIds: ["f-alice", "f-bob"],
+    keywordIds: ["keyword-1"],
+    yearMin: 2018,
+    yearMax: 2025,
+    layoutId: "tsne",
+    colorMode: "faculty",
+    sizeMode: "citations",
+    displayMode: "show",
+  });
+
+  const invalid = core.parseMapState(
+    "q=%20&ymin=999&ymax=not-a-year&layout=&color=year",
+  );
+  assert.deepEqual(invalid.titleQueries, []);
+  assert.equal(invalid.yearMin, null);
+  assert.equal(invalid.yearMax, null);
+  assert.equal(invalid.layoutId, "");
+  assert.equal(invalid.colorMode, "year");
+  assert.deepEqual(core.parseMapState("x".repeat(8193)).departmentIds, []);
+  assert.equal(core.serializeMapState().toString(), "");
 });
 
 test("preferred IDs prioritize active, available choices", () => {
@@ -492,6 +610,209 @@ test("preferred IDs prioritize active, available choices", () => {
   );
   assert.equal(core.preferredId(ids, new Set(), new Set(["third"])), "third");
   assert.equal(core.preferredId(ids, new Set(), new Set()), "");
+});
+
+test("isolated t-SNE child topics promote into the overview", () => {
+  const keywords = [
+    {
+      keyword_id: "parent",
+      label: "broad parent",
+      level: 0,
+      parent_keyword_id: null,
+      coordinates: { tsne: { x: 0, y: 0 }, pca: { x: 0, y: 0 } },
+    },
+    {
+      keyword_id: "near",
+      label: "near child",
+      level: 1,
+      parent_keyword_id: "parent",
+      coordinates: { tsne: { x: 0.1, y: 0 }, pca: { x: 0.1, y: 0 } },
+    },
+    {
+      keyword_id: "island",
+      label: "island child",
+      level: 1,
+      parent_keyword_id: "parent",
+      coordinates: { tsne: { x: 0.9, y: 0 }, pca: { x: 0.9, y: 0 } },
+    },
+    {
+      keyword_id: "other",
+      label: "other child",
+      level: 1,
+      parent_keyword_id: "parent",
+      coordinates: { tsne: { x: 0.2, y: 0 }, pca: { x: 0.2, y: 0 } },
+    },
+    {
+      keyword_id: "second-island",
+      label: "second island child",
+      level: 1,
+      parent_keyword_id: "parent",
+      coordinates: { tsne: { x: -0.9, y: 0 }, pca: { x: -0.9, y: 0 } },
+    },
+  ];
+  const points = [
+    ...Array.from({ length: 60 }, (_, index) => ({
+      keyword_ids: ["parent", "near"],
+      x: 0.1 + (index % 2 ? -0.04 : 0.04),
+      y: 0,
+    })),
+    ...Array.from({ length: 60 }, (_, index) => ({
+      keyword_ids: ["parent", "other"],
+      x: 0.2 + (index % 2 ? -0.04 : 0.04),
+      y: 0,
+    })),
+    ...Array.from({ length: 60 }, (_, index) => ({
+      keyword_ids: ["parent", "island"],
+      x: 0.9 + (index % 2 ? -0.01 : 0.01),
+      y: 0,
+    })),
+    ...Array.from({ length: 60 }, (_, index) => ({
+      keyword_ids: ["parent", "second-island"],
+      x: -0.9 + (index % 2 ? -0.02 : 0.02),
+      y: 0,
+    })),
+    { keyword_ids: ["unknown"], x: 1, y: 1 },
+    { x: 0, y: 0 },
+  ];
+
+  const tsne = core.buildKeywordLabelPlan(keywords, points, { layoutId: "tsne" });
+  assert.equal(tsne.find((item) => item.keyword_id === "near").promotion, "");
+  assert.equal(tsne.find((item) => item.keyword_id === "other").promotion, "");
+  assert.equal(tsne.find((item) => item.keyword_id === "island").promotion, "isolation");
+  assert.equal(
+    tsne.find((item) => item.keyword_id === "second-island").promotion,
+    "isolation",
+  );
+  assert.equal(tsne.find((item) => item.keyword_id === "island").effective_level, 0);
+  assert.equal(tsne.find((item) => item.keyword_id === "island").x, 0.9);
+
+  const pca = core.buildKeywordLabelPlan(keywords, points, { layoutId: "pca" });
+  assert.ok(pca.every((item) => item.promotion === ""));
+  assert.deepEqual(core.buildKeywordLabelPlan(null, points), []);
+  assert.deepEqual(core.buildKeywordLabelPlan(keywords, null), []);
+});
+
+test("active topic support promotes specifics, demotes broad parents, and moves labels", () => {
+  const keywords = [
+    {
+      keyword_id: "parent",
+      label: "broad parent",
+      level: 0,
+      parent_keyword_id: null,
+      _coordinates: new Map([["tsne", { x: 0, y: 0 }]]),
+    },
+    {
+      keyword_id: "specific",
+      label: "specific island",
+      level: 1,
+      parent_keyword_id: "parent",
+      _coordinates: new Map([["tsne", { x: 0.7, y: 0.2 }]]),
+    },
+    {
+      keyword_id: "other",
+      label: "other topic",
+      level: 1,
+      parent_keyword_id: "parent",
+      _coordinates: new Map([["tsne", { x: 0.1, y: 0.1 }]]),
+    },
+    {
+      keyword_id: "unused",
+      label: "unused parent",
+      level: 0,
+      parent_keyword_id: null,
+      coordinates: {},
+    },
+  ];
+  const activePoints = [
+    { keyword_ids: ["parent", "specific"], x: 0.7, y: 0.2 },
+    { keyword_ids: ["parent", "specific"], x: 0.8, y: 0.3 },
+    { keyword_ids: ["parent", "specific"], x: 0.9, y: 0.4 },
+    { keyword_ids: ["parent", "specific"], x: Number.NaN, y: 0 },
+  ];
+  const plan = core.buildKeywordLabelPlan(keywords, activePoints, {
+    layoutId: "tsne",
+    filtersActive: true,
+  });
+  const parent = plan.find((item) => item.keyword_id === "parent");
+  const specific = plan.find((item) => item.keyword_id === "specific");
+  const unused = plan.find((item) => item.keyword_id === "unused");
+  assert.equal(parent.effective_level, 1);
+  assert.equal(specific.effective_level, 0);
+  assert.equal(specific.promotion, "active");
+  assert.equal(specific.activity_count, 4);
+  assert.ok(Math.abs(specific.x - 0.8) < Number.EPSILON);
+  assert.ok(Math.abs(specific.y - 0.3) < Number.EPSILON);
+  assert.deepEqual([unused.x, unused.y], [0, 0]);
+
+  const insufficient = core.buildKeywordLabelPlan(keywords, activePoints.slice(0, 2), {
+    layoutId: "tsne",
+    filtersActive: true,
+  });
+  assert.equal(insufficient.find((item) => item.keyword_id === "parent").effective_level, 0);
+  assert.equal(insufficient.find((item) => item.keyword_id === "specific").promotion, "");
+  assert.ok(
+    core
+      .buildKeywordLabelPlan(keywords, [], { layoutId: "tsne", filtersActive: true })
+      .every((item) => item.promotion === ""),
+  );
+
+  const contestedPoints = [
+    ...Array.from({ length: 6 }, () => ({
+      keyword_ids: ["parent", "specific"],
+      x: 0.7,
+      y: 0.2,
+    })),
+    ...Array.from({ length: 4 }, () => ({
+      keyword_ids: ["parent", "other"],
+      x: 0.1,
+      y: 0.1,
+    })),
+  ];
+  const contested = core.buildKeywordLabelPlan(keywords, contestedPoints, {
+    layoutId: "tsne",
+    filtersActive: true,
+  });
+  assert.equal(contested.find((item) => item.keyword_id === "specific").promotion, "");
+});
+
+test("active topic promotion keeps a four-label overview budget", () => {
+  const keywords = [];
+  const points = [];
+  for (let index = 0; index < 5; index += 1) {
+    const parentId = `parent-${index}`;
+    const childId = `child-${index}`;
+    keywords.push(
+      {
+        keyword_id: parentId,
+        label: `parent ${index}`,
+        level: 0,
+        parent_keyword_id: null,
+        coordinates: { tsne: { x: index, y: 0 } },
+      },
+      {
+        keyword_id: childId,
+        label: `child ${index}`,
+        level: 1,
+        parent_keyword_id: parentId,
+        coordinates: { tsne: { x: index, y: 0.1 } },
+      },
+    );
+    points.push(
+      ...Array.from({ length: 20 }, () => ({
+        keyword_ids: [parentId, childId],
+        x: index,
+        y: 0.1,
+      })),
+    );
+  }
+
+  const plan = core.buildKeywordLabelPlan(keywords, points, {
+    layoutId: "tsne",
+    filtersActive: true,
+  });
+  assert.equal(plan.filter((item) => item.promotion === "active").length, 4);
+  assert.equal(plan.find((item) => item.keyword_id === "child-4").promotion, "");
+  assert.equal(plan.find((item) => item.keyword_id === "parent-4").effective_level, 0);
 });
 
 test("fit calculations center finite points and reject bad dimensions", () => {
@@ -510,6 +831,47 @@ test("fit calculations center finite points and reject bad dimensions", () => {
   assert.equal(core.fitView([], 100, 100), null);
   assert.equal(core.fitView([{ x: Number.NaN, y: 0 }], 100, 100), null);
   assert.equal(core.baseScale(10, 10), 1);
+});
+
+test("robust fit trims the most distant two percent while all-point fit remains", () => {
+  const cluster = Array.from({ length: 51 }, (_, index) => ({
+    x: (index - 25) / 25,
+    y: ((index % 5) - 2) / 10,
+  }));
+  const points = [...cluster, { x: 100, y: 100 }, { x: Number.NaN, y: 0 }];
+
+  const allBounds = core.pointBounds(points);
+  const robustBounds = core.pointBounds(points, { centralFraction: 0.98 });
+  assert.equal(allBounds.maxX, 100);
+  assert.equal(allBounds.includedCount, 52);
+  assert.equal(allBounds.excludedCount, 0);
+  assert.ok(robustBounds.maxX <= 1);
+  assert.ok(robustBounds.maxY <= 0.2);
+  assert.equal(robustBounds.pointCount, 52);
+  assert.equal(robustBounds.includedCount, 51);
+  assert.equal(robustBounds.excludedCount, 1);
+
+  const allView = core.fitView(points, 1000, 600);
+  const robustView = core.fitView(points, 1000, 600, {
+    centralFraction: 0.98,
+  });
+  assert.ok(robustView.scale > allView.scale);
+  assert.equal(allView.centralFraction, 1);
+  assert.equal(allView.excludedCount, 0);
+  assert.equal(robustView.centralFraction, 0.98);
+  assert.equal(robustView.includedCount, 51);
+  assert.equal(robustView.excludedCount, 1);
+
+  assert.throws(
+    () => core.pointBounds([{ x: 0, y: 0 }], { centralFraction: 0 }),
+    RangeError,
+  );
+  assert.throws(
+    () => core.pointBounds([{ x: 0, y: 0 }], { centralFraction: 1.01 }),
+    RangeError,
+  );
+  assert.equal(core.pointBounds(null), null);
+  assert.equal(core.pointBounds([{ x: Infinity, y: 0 }]), null);
 });
 
 test("dates are rendered in UTC and invalid values stay blank", () => {

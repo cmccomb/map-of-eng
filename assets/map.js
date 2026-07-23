@@ -5,6 +5,7 @@ const SEQUENTIAL_COLOR_STEPS = 48;
 const SIZE_RADIUS_STEPS = 8;
 const DETAIL_KEYWORD_SCALE = 1.5;
 const ARTIFACT_FETCH_TIMEOUT_MS = 60_000;
+const RESULTS_PAGE_SIZE = 50;
 const core = globalThis.ResearchMapCore;
 
 const state = {
@@ -15,6 +16,7 @@ const state = {
   departments: [],
   faculty: [],
   keywords: [],
+  keywordLabelPlan: [],
   keywordLevels: [],
   layouts: [],
   departmentById: new Map(),
@@ -31,8 +33,18 @@ const state = {
   citationMaximum: 0,
   citationMaximumClipped: false,
   activeTitleTerms: new Map(),
+  activeTopics: new Set(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
+  yearMinimum: null,
+  yearMaximum: null,
+  actualYearMinimum: null,
+  actualYearMaximum: null,
+  facetCounts: {
+    keywordCounts: new Map(),
+    departmentCounts: new Map(),
+    facultyCounts: new Map(),
+  },
   colorMode: "department",
   sizeMode: "none",
   displayMode: "highlight",
@@ -52,8 +64,12 @@ const state = {
   canvasWidth: 0,
   canvasHeight: 0,
   spatialIndex: new Map(),
+  keywordLabelBoxes: [],
   hoverFrame: 0,
   hoverEvent: null,
+  resultsVisibleLimit: RESULTS_PAGE_SIZE,
+  ready: false,
+  restoringUrlState: false,
 };
 
 const canvas = document.querySelector("#research-map");
@@ -141,6 +157,7 @@ const legendPanel = document.querySelector(".legend-panel");
 const mapColumn = document.querySelector(".map-column");
 const toggleFiltersButton = document.querySelector("#toggle-filters");
 const toggleLegendButton = document.querySelector("#toggle-legend");
+const toggleResultsButton = document.querySelector("#toggle-results");
 const mapControls = document.querySelector(".map-controls");
 const mapZoomInButton = document.querySelector("#map-zoom-in");
 const mapZoomOutButton = document.querySelector("#map-zoom-out");
@@ -153,17 +170,28 @@ const loadingDetail = document.querySelector("#loading-detail");
 const tooltip = document.querySelector("#tooltip");
 const titleSearch = document.querySelector("#title-search");
 const selectedTitles = document.querySelector("#selected-titles");
+const topicSearch = document.querySelector("#topic-search");
+const topicSuggestions = document.querySelector("#topic-suggestions");
+const selectedTopics = document.querySelector("#selected-topics");
+const topicSelectionNote = document.querySelector("#topic-selection-note");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
 const departmentSearch = document.querySelector("#department-search");
 const departmentSuggestions = document.querySelector("#department-suggestions");
 const selectedDepartments = document.querySelector("#selected-departments");
+const yearMinimumInput = document.querySelector("#year-min");
+const yearMaximumInput = document.querySelector("#year-max");
+const yearPresets = document.querySelector(".year-presets");
 const layoutOptions = document.querySelector("#layout-options");
 const layoutNote = document.querySelector("#layout-note");
 const clearFiltersButton = document.querySelector("#clear-filters");
 const zoomResultsButton = document.querySelector("#zoom-results");
+const showAllResultsButton = document.querySelector("#show-all-results");
+const openResultsButton = document.querySelector("#open-results");
+const fitNote = document.querySelector("#fit-note");
 const resetViewButton = document.querySelector("#reset-view");
+const copyViewButton = document.querySelector("#copy-view");
 const mapLegend = document.querySelector("#map-legend");
 const legendSummary = document.querySelector("#legend-summary");
 const sizeLegend = document.querySelector("#size-legend");
@@ -180,40 +208,62 @@ const detailDepartments = document.querySelector("#detail-departments");
 const detailKeyword = document.querySelector("#detail-keyword");
 const detailLink = document.querySelector("#detail-link");
 const closeDetail = document.querySelector("#close-detail");
+const resultsPanel = document.querySelector("#results-panel");
+const resultsSummary = document.querySelector("#results-summary");
+const resultsMetrics = document.querySelector("#results-metrics");
+const resultsTopics = document.querySelector("#results-topics");
+const resultsSort = document.querySelector("#results-sort");
+const resultsList = document.querySelector("#results-list");
+const showMoreResultsButton = document.querySelector("#show-more-results");
+const exportResultsButton = document.querySelector("#export-results");
+const closeResultsButton = document.querySelector("#close-results");
 const compactLayoutQuery = window.matchMedia("(max-width: 680px)");
 
 function setCompactPanel(openPanel = "") {
   const compact = compactLayoutQuery.matches;
   const filtersOpen = compact && openPanel === "filters";
   const legendOpen = compact && openPanel === "legend";
+  const resultsOpen = compact && openPanel === "results";
 
   filterPanel.classList.toggle("mobile-open", filtersOpen);
   legendPanel.classList.toggle("mobile-open", legendOpen);
+  resultsPanel.classList.toggle("mobile-open", resultsOpen);
   toggleFiltersButton.setAttribute("aria-expanded", String(filtersOpen));
   toggleLegendButton.setAttribute("aria-expanded", String(legendOpen));
+  toggleResultsButton.setAttribute("aria-expanded", String(resultsOpen));
 
   if (!compact) {
     filterPanel.inert = false;
     legendPanel.inert = false;
+    resultsPanel.inert = false;
     filterPanel.removeAttribute("aria-hidden");
     legendPanel.removeAttribute("aria-hidden");
+    resultsPanel.removeAttribute("aria-hidden");
     return;
   }
 
   filterPanel.inert = !filtersOpen;
   legendPanel.inert = !legendOpen;
+  resultsPanel.inert = !resultsOpen;
   filterPanel.setAttribute("aria-hidden", String(!filtersOpen));
   legendPanel.setAttribute("aria-hidden", String(!legendOpen));
+  resultsPanel.setAttribute("aria-hidden", String(!resultsOpen));
 }
 
 function toggleCompactPanel(panelName) {
   if (!compactLayoutQuery.matches) return;
-  const panel = panelName === "filters" ? filterPanel : legendPanel;
+  const panel =
+    panelName === "filters"
+      ? filterPanel
+      : panelName === "legend"
+        ? legendPanel
+        : resultsPanel;
   const shouldOpen = !panel.classList.contains("mobile-open");
   setCompactPanel(shouldOpen ? panelName : "");
   if (shouldOpen) {
     detailPanel.hidden = true;
     state.selectedWorkId = "";
+    if (panelName === "results") resultsPanel.hidden = false;
     tooltip.hidden = true;
     scheduleDraw();
   }
@@ -233,6 +283,23 @@ function departmentNames(point) {
   return point.department_ids
     .map((departmentId) => state.departmentById.get(departmentId)?.title)
     .filter(Boolean);
+}
+
+function keywordPath(keyword) {
+  const path = [];
+  let current = keyword;
+  const visited = new Set();
+  while (current && !visited.has(current.keyword_id)) {
+    visited.add(current.keyword_id);
+    path.unshift(current.label);
+    current = state.keywordById.get(current.parent_keyword_id);
+  }
+  return path;
+}
+
+function keywordDescription(keyword) {
+  const path = keywordPath(keyword);
+  return path.length > 1 ? path.join(" › ") : keyword.label;
 }
 
 function preparePoint(point) {
@@ -297,6 +364,8 @@ function activateLayout(layoutId, { fit = true } = {}) {
     });
   layoutNote.textContent = layoutDescription(layout);
   tooltip.hidden = true;
+  refreshKeywordLabelPlan();
+  syncUrlState();
   if (fit) resetView();
   else scheduleDraw();
 }
@@ -502,49 +571,141 @@ function rectanglesOverlap(left, right) {
   );
 }
 
-function drawKeywordLabels(width, height) {
-  if (!state.keywords.length) {
-    canvas.dataset.visibleKeywordLevels = "";
-    return;
-  }
-  const matchedCounts = new Map();
-  if (state.filtersActive) {
-    for (const point of state.matchedPoints) {
-      for (const keywordId of point.keyword_ids) {
-        matchedCounts.set(keywordId, (matchedCounts.get(keywordId) || 0) + 1);
-      }
+function visibleElementRectangle(element, canvasBounds, padding = 8) {
+  if (!element || element.hidden) return null;
+  const style = getComputedStyle(element);
+  if (style.display === "none" || style.visibility === "hidden") return null;
+  const bounds = element.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return null;
+  return {
+    left: bounds.left - canvasBounds.left - padding,
+    right: bounds.right - canvasBounds.left + padding,
+    top: bounds.top - canvasBounds.top - padding,
+    bottom: bounds.bottom - canvasBounds.top + padding,
+  };
+}
+
+function keywordLabelOcclusions() {
+  const canvasBounds = canvas.getBoundingClientRect();
+  return [filterPanel, legendPanel, detailPanel, resultsPanel, mapControls]
+    .map((element) => visibleElementRectangle(element, canvasBounds))
+    .filter(Boolean);
+}
+
+function keywordLabelBox(x, y, textWidth, fontSize) {
+  return {
+    left: x - textWidth / 2 - 7,
+    right: x + textWidth / 2 + 7,
+    top: y - fontSize / 2 - 5,
+    bottom: y + fontSize / 2 + 5,
+  };
+}
+
+function placeKeywordLabel(keyword, textWidth, width, height, occlusions, placed) {
+  const halfWidth = textWidth / 2 + 7;
+  const halfHeight = keyword.fontSize / 2 + 5;
+  const candidates = [{ x: keyword.x, y: keyword.y }];
+  if (keyword.promotion) {
+    for (const rectangle of occlusions) {
+      candidates.push(
+        { x: rectangle.right + halfWidth + 5, y: keyword.y },
+        { x: rectangle.left - halfWidth - 5, y: keyword.y },
+        { x: keyword.x, y: rectangle.bottom + halfHeight + 5 },
+        { x: keyword.x, y: rectangle.top - halfHeight - 5 },
+      );
     }
   }
+  if (keyword.promotion || keyword.effective_level > 0) {
+    const step = keyword.fontSize + 10;
+    candidates.push(
+      { x: keyword.x, y: keyword.y - step },
+      { x: keyword.x, y: keyword.y + step },
+      { x: keyword.x - step, y: keyword.y },
+      { x: keyword.x + step, y: keyword.y },
+      { x: keyword.x, y: keyword.y - step * 2 },
+      { x: keyword.x, y: keyword.y + step * 2 },
+    );
+  }
+  candidates.sort(
+    (left, right) =>
+      Math.hypot(left.x - keyword.x, left.y - keyword.y) -
+      Math.hypot(right.x - keyword.x, right.y - keyword.y),
+  );
+  for (const candidate of candidates) {
+    const box = keywordLabelBox(
+      candidate.x,
+      candidate.y,
+      textWidth,
+      keyword.fontSize,
+    );
+    if (
+      box.left < 4 ||
+      box.right > width - 4 ||
+      box.top < 4 ||
+      box.bottom > height - 4 ||
+      occlusions.some((rectangle) => rectanglesOverlap(box, rectangle)) ||
+      placed.some((rectangle) => rectanglesOverlap(box, rectangle))
+    ) {
+      continue;
+    }
+    return { box, x: candidate.x, y: candidate.y };
+  }
+  return null;
+}
+
+function refreshKeywordLabelPlan() {
+  const activePoints = state.filtersActive ? state.matchedPoints : state.points;
+  state.keywordLabelPlan = core.buildKeywordLabelPlan(state.keywords, activePoints, {
+    layoutId: state.layoutId,
+    filtersActive: state.filtersActive,
+  });
+}
+
+function drawKeywordLabels(width, height) {
+  state.keywordLabelBoxes = [];
+  if (!state.keywordLabelPlan.length) {
+    canvas.dataset.visibleKeywordLevels = "";
+    canvas.dataset.promotedKeywords = "";
+    return;
+  }
   const unitScale = baseScale(width, height);
-  const candidates = state.keywords
+  const candidates = state.keywordLabelPlan
     .filter(
       (keyword) => {
         const scaleThreshold =
-          keyword.level === 0
+          keyword.effective_level === 0
             ? 0
-            : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.level - 1);
-        const minimumMatches = keyword.level === 0 ? 3 : 2;
+            : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.effective_level - 1);
+        const minimumMatches = keyword.promotion
+          ? Math.max(3, Math.ceil(state.matchedPoints.length * 0.03))
+          : keyword.effective_level === 0
+            ? Math.max(3, Math.ceil(state.matchedPoints.length * 0.05))
+            : Math.max(2, Math.ceil(state.matchedPoints.length * 0.02));
         return (
           state.scale >= scaleThreshold &&
-          (!state.filtersActive ||
-            (matchedCounts.get(keyword.keyword_id) || 0) >= minimumMatches)
+          (!state.filtersActive || keyword.activity_count >= minimumMatches)
         );
       },
     )
     .map((keyword) => {
-      const coordinates = keyword._coordinates.get(state.layoutId);
       const scaleThreshold =
-        keyword.level === 0
+        keyword.effective_level === 0
           ? 0
-          : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.level - 1);
+          : DETAIL_KEYWORD_SCALE * 1.8 ** (keyword.effective_level - 1);
       return {
         ...keyword,
-        x: width / 2 + coordinates.x * unitScale * state.scale + state.offsetX,
-        y: height / 2 - coordinates.y * unitScale * state.scale + state.offsetY,
+        x: width / 2 + keyword.x * unitScale * state.scale + state.offsetX,
+        y: height / 2 - keyword.y * unitScale * state.scale + state.offsetY,
         fontSize:
-          keyword.level === 0 ? (width < 700 ? 9.5 : 11) : width < 700 ? 8 : 9,
+          keyword.effective_level === 0
+            ? width < 700
+              ? 9.5
+              : 11
+            : width < 700
+              ? 8
+              : 9,
         opacity:
-          keyword.level === 0
+          keyword.effective_level === 0
             ? 1
             : Math.min(
                 1,
@@ -562,29 +723,45 @@ function drawKeywordLabels(width, height) {
     )
     .sort(
       (left, right) =>
-        left.level - right.level ||
-        right.publication_count - left.publication_count ||
+        left.effective_level - right.effective_level ||
+        Number(Boolean(right.promotion)) - Number(Boolean(left.promotion)) ||
+        right.activity_count - left.activity_count ||
         left.label.localeCompare(right.label),
     );
 
   context.save();
   context.textAlign = "center";
   context.textBaseline = "middle";
+  const occlusions = keywordLabelOcclusions();
   const placed = [];
   const placedLevels = new Set();
+  const promotedKeywords = [];
   for (const keyword of candidates) {
-    context.font = `${keyword.level === 0 ? 650 : 560} ${keyword.fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
+    context.font = `${keyword.effective_level === 0 ? 650 : 560} ${keyword.fontSize}px Inter, ui-sans-serif, system-ui, sans-serif`;
     const textWidth = context.measureText(keyword.label).width;
-    const box = {
-      left: keyword.x - textWidth / 2 - 7,
-      right: keyword.x + textWidth / 2 + 7,
-      top: keyword.y - keyword.fontSize / 2 - 5,
-      bottom: keyword.y + keyword.fontSize / 2 + 5,
-    };
-    if (placed.some((existing) => rectanglesOverlap(box, existing))) continue;
-    placed.push(box);
-    placedLevels.add(keyword.level);
+    const placement = placeKeywordLabel(
+      keyword,
+      textWidth,
+      width,
+      height,
+      occlusions,
+      placed,
+    );
+    if (!placement) continue;
+    const { box, x, y } = placement;
+    placed.push(placement.box);
+    state.keywordLabelBoxes.push({ box: placement.box, keyword });
+    placedLevels.add(keyword.effective_level);
+    if (keyword.promotion) promotedKeywords.push(keyword.keyword_id);
     context.globalAlpha = keyword.opacity;
+    if (Math.hypot(x - keyword.x, y - keyword.y) > 4) {
+      context.beginPath();
+      context.moveTo(keyword.x, keyword.y);
+      context.lineTo(x, y);
+      context.strokeStyle = themeColor("--keyword-border", "#8fa5b540");
+      context.lineWidth = 0.75;
+      context.stroke();
+    }
     roundedRectangle(
       box.left,
       box.top,
@@ -594,14 +771,17 @@ function drawKeywordLabels(width, height) {
     );
     context.fillStyle = themeColor("--keyword-background", "#091621dc");
     context.fill();
-    context.strokeStyle = themeColor("--keyword-border", "#8fa5b540");
-    context.lineWidth = 0.75;
+    context.strokeStyle = keyword.promotion
+      ? themeColor("--accent", "#62c8e8")
+      : themeColor("--keyword-border", "#8fa5b540");
+    context.lineWidth = keyword.promotion ? 1.15 : 0.75;
     context.stroke();
     context.fillStyle = themeColor("--keyword-text", "#eef5f8");
-    context.fillText(keyword.label, keyword.x, keyword.y + 0.25);
+    context.fillText(keyword.label, x, y + 0.25);
   }
   context.restore();
   canvas.dataset.visibleKeywordLevels = [...placedLevels].sort().join(",");
+  canvas.dataset.promotedKeywords = promotedKeywords.join(",");
 }
 
 function draw() {
@@ -670,13 +850,17 @@ function updateStatus() {
   if (!matched && total) {
     emptyTitle.textContent = "No publications match this combination.";
     emptyCopy.textContent =
-      "Try a broader title, author, or department selection.";
+      "Try a broader title, topic, author, department, or year selection.";
   } else if (!total) {
     emptyTitle.textContent = "No publications are available yet.";
     emptyCopy.textContent = "The data source loaded successfully but is empty.";
   }
   clearFiltersButton.disabled = !state.filtersActive;
   zoomResultsButton.disabled = !state.filtersActive || matched === 0;
+  showAllResultsButton.disabled = !state.filtersActive || matched === 0;
+  openResultsButton.disabled = matched === 0;
+  toggleResultsButton.disabled = !state.ready || matched === 0;
+  exportResultsButton.disabled = matched === 0;
   const keywordDescription = state.keywordLevels.length
     ? ` across ${state.keywordLevels
         .map(
@@ -970,19 +1154,408 @@ function renderLegend() {
   renderSizeLegend();
 }
 
-function applyFilters() {
-  const titleQueries = [...state.activeTitleTerms.keys()];
+function appendResultMetric(value, label) {
+  const item = document.createElement("div");
+  item.className = "result-metric";
+  const number = document.createElement("strong");
+  number.textContent = value;
+  const description = document.createElement("span");
+  description.textContent = label;
+  item.append(number, description);
+  resultsMetrics.append(item);
+}
+
+function sortedResultPoints() {
+  const points = [...state.matchedPoints];
+  const titleOrder = (left, right) =>
+    left.title.localeCompare(right.title) ||
+    String(left.work_id).localeCompare(String(right.work_id));
+  if (resultsSort.value === "title") return points.sort(titleOrder);
+  if (resultsSort.value === "citations") {
+    return points.sort(
+      (left, right) =>
+        (Number(right.citation_count) || 0) -
+          (Number(left.citation_count) || 0) ||
+        titleOrder(left, right),
+    );
+  }
+  const direction = resultsSort.value === "oldest" ? 1 : -1;
+  return points.sort(
+    (left, right) => {
+      const leftKnown = Number.isInteger(left.year);
+      const rightKnown = Number.isInteger(right.year);
+      if (leftKnown !== rightKnown) return leftKnown ? -1 : 1;
+      return (
+        direction * ((left.year || 0) - (right.year || 0)) ||
+        titleOrder(left, right)
+      );
+    },
+  );
+}
+
+function renderResults() {
+  const matched = state.matchedPoints;
+  resultsSummary.textContent = `${matched.length.toLocaleString()} of ${state.points.length.toLocaleString()} publications`;
+  resultsMetrics.replaceChildren();
+  resultsTopics.replaceChildren();
+  resultsList.replaceChildren();
+
+  const years = matched
+    .map((point) => point.year)
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right);
+  appendResultMetric(
+    years.length ? `${years[0]}–${years.at(-1)}` : "Unavailable",
+    "publication years",
+  );
+  appendResultMetric(
+    new Set(matched.flatMap((point) => point.faculty_ids)).size.toLocaleString(),
+    "CMU faculty represented",
+  );
+  appendResultMetric(
+    new Set(matched.flatMap((point) => point.department_ids)).size.toLocaleString(),
+    "departments represented",
+  );
+  if (state.activeFaculty.size > 1 || state.activeDepartments.size > 1) {
+    const overlap = matched.filter(
+      (point) =>
+        (state.activeFaculty.size < 2 ||
+          [...state.activeFaculty].every((id) => point.faculty_ids.includes(id))) &&
+        (state.activeDepartments.size < 2 ||
+          [...state.activeDepartments].every((id) =>
+            point.department_ids.includes(id),
+          )),
+    ).length;
+    appendResultMetric(overlap.toLocaleString(), "match every selected entity");
+  } else {
+    appendResultMetric(
+      matched
+        .reduce(
+          (total, point) => total + (Number(point.citation_count) || 0),
+          0,
+        )
+        .toLocaleString(),
+      "citations across matches",
+    );
+  }
+
+  const topicCounts = new Map();
+  for (const point of matched) {
+    for (const keywordId of point.keyword_ids) {
+      if (state.keywordById.get(keywordId)?.level !== 1) continue;
+      topicCounts.set(keywordId, (topicCounts.get(keywordId) || 0) + 1);
+    }
+  }
+  [...topicCounts]
+    .sort(
+      ([leftId, leftCount], [rightId, rightCount]) =>
+        rightCount - leftCount ||
+        state.keywordById
+          .get(leftId)
+          .label.localeCompare(state.keywordById.get(rightId).label),
+    )
+    .slice(0, 5)
+    .forEach(([keywordId, count]) => {
+      const item = document.createElement("li");
+      const label = document.createElement("strong");
+      label.textContent = state.keywordById.get(keywordId)?.label || keywordId;
+      const share = document.createElement("span");
+      share.textContent = `${count.toLocaleString()} · ${
+        matched.length ? Math.round((count / matched.length) * 100) : 0
+      }%`;
+      item.append(label, share);
+      resultsTopics.append(item);
+    });
+  if (!resultsTopics.childElementCount) {
+    const item = document.createElement("li");
+    item.textContent = "No detailed topic metadata available";
+    resultsTopics.append(item);
+  }
+
+  const sorted = sortedResultPoints();
+  for (const point of sorted.slice(0, state.resultsVisibleLimit)) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "result-item";
+    button.dataset.workId = point.work_id;
+    const title = document.createElement("strong");
+    title.textContent = point.title;
+    const meta = document.createElement("span");
+    const year = point.year || "Year unavailable";
+    const faculty = facultyNames(point).join(", ") || point.authors;
+    meta.textContent = `${year} · ${faculty || "Authors unavailable"} · ${Number(
+      point.citation_count || 0,
+    ).toLocaleString()} citations`;
+    button.append(title, meta);
+    item.append(button);
+    resultsList.append(item);
+  }
+  showMoreResultsButton.hidden =
+    state.resultsVisibleLimit >= sorted.length || sorted.length === 0;
+  showMoreResultsButton.textContent = `Show ${Math.min(
+    RESULTS_PAGE_SIZE,
+    Math.max(0, sorted.length - state.resultsVisibleLimit),
+  ).toLocaleString()} more`;
+}
+
+function openResultsPanel() {
+  if (!state.matchedPoints.length) return;
+  detailPanel.hidden = true;
+  state.selectedWorkId = "";
+  state.resultsVisibleLimit = RESULTS_PAGE_SIZE;
+  resultsPanel.hidden = false;
+  renderResults();
+  if (compactLayoutQuery.matches) setCompactPanel("results");
+  else resultsPanel.focus({ preventScroll: true });
+  scheduleDraw();
+}
+
+function closeResultsPanel({ focus = true } = {}) {
+  resultsPanel.hidden = true;
+  resultsPanel.classList.remove("mobile-open");
+  toggleResultsButton.setAttribute("aria-expanded", "false");
+  if (compactLayoutQuery.matches) setCompactPanel("");
+  if (focus) canvas.focus({ preventScroll: true });
+  scheduleDraw();
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function exportResultsCsv() {
+  if (!state.matchedPoints.length) return;
+  const headings = [
+    "Title",
+    "Authors",
+    "Year",
+    "Venue",
+    "Citations",
+    "CMU faculty",
+    "Departments",
+    "Topic path",
+    "Source",
+  ];
+  const rows = state.matchedPoints.map((point) => [
+    point.title,
+    point.authors,
+    point.year || "",
+    point.venue,
+    Number(point.citation_count) || 0,
+    facultyNames(point).join("; "),
+    departmentNames(point).join("; "),
+    point.keyword_ids
+      .map((keywordId) => state.keywordById.get(keywordId)?.label)
+      .filter(Boolean)
+      .join(" > "),
+    point.source_url || (point.doi ? `https://doi.org/${point.doi}` : ""),
+  ]);
+  const csv = [headings, ...rows]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "cmu-engineering-publications-filtered.csv";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function serializedUiState() {
+  return core.serializeMapState({
+    titleQueries: [...state.activeTitleTerms.keys()],
+    departmentIds: state.activeDepartments,
+    facultyIds: state.activeFaculty,
+    keywordIds: state.activeTopics,
+    yearMin: state.yearMinimum,
+    yearMax: state.yearMaximum,
+    layoutId: state.layoutId,
+    colorMode: state.colorMode,
+    sizeMode: state.sizeMode,
+    displayMode: state.displayMode,
+  });
+}
+
+function syncUrlState() {
+  if (!state.ready || state.restoringUrlState) return;
+  const query = serializedUiState();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
+async function copyViewLink() {
+  syncUrlState();
+  const link = window.location.href;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+    await navigator.clipboard.writeText(link);
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = link;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
+  }
+  const original = copyViewButton.textContent;
+  copyViewButton.textContent = "Link copied";
+  window.setTimeout(() => {
+    copyViewButton.textContent = original;
+  }, 1600);
+}
+
+function checkedMode(name, value) {
+  const input = document.querySelector(
+    `input[name="${name}"][value="${CSS.escape(value)}"]`,
+  );
+  if (input) input.checked = true;
+  return Boolean(input);
+}
+
+function restoreUrlState(search = window.location.search) {
+  if (!state.points.length) return;
+  const parsed = core.parseMapState(search);
+  state.restoringUrlState = true;
+  resetFilters();
+
+  for (const query of parsed.titleQueries) {
+    state.activeTitleTerms.set(query, query);
+    ensureTitleColor(query);
+  }
+  parsed.departmentIds
+    .filter((id) => state.departmentById.has(id))
+    .forEach((id) => state.activeDepartments.add(id));
+  parsed.facultyIds
+    .filter((id) => state.facultyById.has(id))
+    .forEach((id) => state.activeFaculty.add(id));
+  parsed.keywordIds
+    .filter((id) => state.keywordById.has(id))
+    .forEach((id) => state.activeTopics.add(id));
+
+  const minimum = state.actualYearMinimum;
+  const maximum = state.actualYearMaximum;
+  state.yearMinimum =
+    Number.isFinite(parsed.yearMin) &&
+    parsed.yearMin >= minimum &&
+    parsed.yearMin <= maximum
+      ? parsed.yearMin
+      : null;
+  state.yearMaximum =
+    Number.isFinite(parsed.yearMax) &&
+    parsed.yearMax >= minimum &&
+    parsed.yearMax <= maximum
+      ? parsed.yearMax
+      : null;
+  if (
+    Number.isFinite(state.yearMinimum) &&
+    Number.isFinite(state.yearMaximum) &&
+    state.yearMinimum > state.yearMaximum
+  ) {
+    [state.yearMinimum, state.yearMaximum] = [
+      state.yearMaximum,
+      state.yearMinimum,
+    ];
+  }
+  yearMinimumInput.value = state.yearMinimum ?? "";
+  yearMaximumInput.value = state.yearMaximum ?? "";
+
+  const layoutId = state.layoutById.has(parsed.layoutId)
+    ? parsed.layoutId
+    : state.layoutId;
+  if (layoutId !== state.layoutId) {
+    state.layoutId = layoutId;
+    for (const point of state.points) {
+      const coordinates = point._coordinates.get(layoutId);
+      point.x = coordinates.x;
+      point.y = coordinates.y;
+    }
+  }
+  populateLayouts();
+
+  if (
+    ["title", "department", "faculty", "year", "citations"].includes(
+      parsed.colorMode,
+    )
+  ) {
+    state.colorMode = parsed.colorMode;
+  }
+  if (["none", "oldest", "newest", "citations"].includes(parsed.sizeMode)) {
+    state.sizeMode = parsed.sizeMode;
+  }
+  if (["highlight", "show"].includes(parsed.displayMode)) {
+    state.displayMode = parsed.displayMode;
+  }
+  checkedMode("color-mode", state.colorMode);
+  checkedMode("size-mode", state.sizeMode);
+  checkedMode("display-mode", state.displayMode);
+
+  renderSelectedTitles();
+  topicFilter.renderSelected();
+  authorFilter.renderSelected();
+  departmentFilter.renderSelected();
+  applyFilters({ syncUrl: false });
+  state.restoringUrlState = false;
+}
+
+function currentFilterOptions() {
+  return {
+    titleQueries: [...state.activeTitleTerms.keys()],
+    departmentIds: state.activeDepartments,
+    facultyIds: state.activeFaculty,
+    keywordIds: state.activeTopics,
+    yearMin: state.yearMinimum,
+    yearMax: state.yearMaximum,
+  };
+}
+
+function updateTopicSelectionNote() {
+  if (!state.activeTopics.size) {
+    topicSelectionNote.hidden = true;
+    topicSelectionNote.textContent = "";
+    return;
+  }
+  if (state.activeTopics.size > 1) {
+    topicSelectionNote.hidden = false;
+    topicSelectionNote.textContent = `${state.activeTopics.size} topics selected · any topic may match`;
+    return;
+  }
+  const keywordId = [...state.activeTopics][0];
+  const keyword = state.keywordById.get(keywordId);
+  if (!keyword) {
+    topicSelectionNote.hidden = true;
+    return;
+  }
+  const count = state.matchedPoints.filter((point) =>
+    point.keyword_ids.includes(keywordId),
+  ).length;
+  const planned = state.keywordLabelPlan.find(
+    (candidate) => candidate.keyword_id === keywordId,
+  );
+  const levelLabel = keyword.level > 0 ? "Detailed topic" : "Overview topic";
+  const promotionLabel = planned?.promotion ? " · promoted in this view" : "";
+  topicSelectionNote.textContent = `${levelLabel} · ${keywordDescription(keyword)} · ${count.toLocaleString()} match${count === 1 ? "" : "es"}${promotionLabel}`;
+  topicSelectionNote.hidden = false;
+}
+
+function applyFilters({ syncUrl = true } = {}) {
   state.filtersActive = Boolean(
     state.activeTitleTerms.size ||
+    state.activeTopics.size ||
     state.activeDepartments.size ||
-    state.activeFaculty.size,
+    state.activeFaculty.size ||
+    Number.isFinite(state.yearMinimum) ||
+    Number.isFinite(state.yearMaximum),
   );
+  const filters = currentFilterOptions();
+  state.facetCounts = core.contextualFacetCounts(state.points, filters);
   state.matchedPoints = state.points.filter((point) =>
-    core.pointMatches(point, {
-      titleQueries,
-      departmentIds: state.activeDepartments,
-      facultyIds: state.activeFaculty,
-    }),
+    core.pointMatches(point, filters),
   );
   const matchedIds = new Set(state.matchedPoints.map((point) => point.work_id));
   for (const point of state.points) {
@@ -1001,8 +1574,16 @@ function applyFilters() {
     state.selectedWorkId = "";
   }
   tooltip.hidden = true;
+  state.resultsVisibleLimit = RESULTS_PAGE_SIZE;
   updateStatus();
   renderLegend();
+  refreshKeywordLabelPlan();
+  updateTopicSelectionNote();
+  authorFilter.refresh();
+  departmentFilter.refresh();
+  topicFilter.refresh();
+  if (!resultsPanel.hidden) renderResults();
+  if (syncUrl) syncUrlState();
   scheduleDraw();
 }
 
@@ -1035,6 +1616,8 @@ function initializeSequentialColors() {
   if (years.length) {
     const actualMinimum = years[0];
     const actualMaximum = years.at(-1);
+    state.actualYearMinimum = actualMinimum;
+    state.actualYearMaximum = actualMaximum;
     const useRobustRange = years.length >= 100;
     const minimum = useRobustRange
       ? years[Math.floor((years.length - 1) * 0.01)]
@@ -1050,7 +1633,23 @@ function initializeSequentialColors() {
     };
   } else {
     state.yearRange = null;
+    state.actualYearMinimum = null;
+    state.actualYearMaximum = null;
   }
+  for (const input of [yearMinimumInput, yearMaximumInput]) {
+    input.disabled = !years.length;
+    input.min = years.length ? String(state.actualYearMinimum) : "";
+    input.max = years.length ? String(state.actualYearMaximum) : "";
+  }
+  yearMinimumInput.placeholder = years.length
+    ? String(state.actualYearMinimum)
+    : "From";
+  yearMaximumInput.placeholder = years.length
+    ? String(state.actualYearMaximum)
+    : "Through";
+  yearPresets.querySelectorAll("button").forEach((button) => {
+    button.disabled = !years.length;
+  });
   const citations = state.points
     .map((point) => Math.max(0, Number(point.citation_count) || 0))
     .sort((left, right) => left - right);
@@ -1073,6 +1672,8 @@ function createMultiSelect({
   itemId,
   itemLabel,
   itemCount,
+  itemAvailable = () => true,
+  selectedLabel = itemLabel,
   showAllOnEmpty = false,
   suggestionLimit = 8,
 }) {
@@ -1113,6 +1714,7 @@ function createMultiSelect({
       .filter(
         (item) =>
           !activeIds.has(itemId(item)) &&
+          itemAvailable(item) &&
           normalizedText(itemLabel(item)).includes(query),
       )
       .sort((left, right) => {
@@ -1175,7 +1777,7 @@ function createMultiSelect({
       button.title = `Remove ${label}`;
       button.setAttribute("aria-label", `Remove ${label}`);
       const name = document.createElement("span");
-      name.textContent = label;
+      name.textContent = selectedLabel(item);
       const close = document.createElement("i");
       close.textContent = "×";
       close.setAttribute("aria-hidden", "true");
@@ -1184,14 +1786,14 @@ function createMultiSelect({
     }
   }
 
-  function addItem(id) {
+  function addItem(id, { focus = true } = {}) {
     if (!items().some((item) => itemId(item) === id)) return;
     activeIds.add(id);
     input.value = "";
     hideSuggestions();
     renderSelected();
     applyFilters();
-    input.focus();
+    if (focus) input.focus();
   }
 
   input.addEventListener("input", renderSuggestions);
@@ -1240,11 +1842,18 @@ function createMultiSelect({
   });
 
   return {
+    add(id, options) {
+      addItem(id, options);
+    },
     clear() {
       input.value = "";
       activeIds.clear();
       hideSuggestions();
       renderSelected();
+    },
+    refresh() {
+      renderSelected();
+      if (!suggestionsList.hidden) renderSuggestions();
     },
     renderSelected,
   };
@@ -1332,7 +1941,12 @@ const authorFilter = createMultiSelect({
   activeIds: state.activeFaculty,
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
-  itemCount: (person) => person.publication_count,
+  itemCount: (person) =>
+    state.facetCounts.facultyCounts.get(person.person_id) ??
+    person.publication_count,
+  itemAvailable: (person) =>
+    (state.facetCounts.facultyCounts.get(person.person_id) ??
+      person.publication_count) > 0,
 });
 
 const departmentFilter = createMultiSelect({
@@ -1344,10 +1958,46 @@ const departmentFilter = createMultiSelect({
   activeIds: state.activeDepartments,
   itemId: (department) => department.department_id,
   itemLabel: (department) => department.title,
-  itemCount: (department) => department.publication_count,
+  itemCount: (department) =>
+    state.facetCounts.departmentCounts.get(department.department_id) ??
+    department.publication_count,
+  itemAvailable: (department) =>
+    (state.facetCounts.departmentCounts.get(department.department_id) ??
+      department.publication_count) > 0,
   showAllOnEmpty: true,
   suggestionLimit: Number.POSITIVE_INFINITY,
 });
+
+const topicFilter = createMultiSelect({
+  input: topicSearch,
+  suggestionsList: topicSuggestions,
+  selectedList: selectedTopics,
+  optionPrefix: "topic",
+  items: () => state.keywords,
+  activeIds: state.activeTopics,
+  itemId: (keyword) => keyword.keyword_id,
+  itemLabel: keywordDescription,
+  selectedLabel: (keyword) => keyword.label,
+  itemCount: (keyword) =>
+    state.facetCounts.keywordCounts.get(keyword.keyword_id) ??
+    keyword.publication_count,
+  itemAvailable: (keyword) =>
+    (state.facetCounts.keywordCounts.get(keyword.keyword_id) ??
+      keyword.publication_count) > 0,
+  suggestionLimit: 10,
+});
+
+function keywordLabelAt(clientX, clientY) {
+  const bounds = canvas.getBoundingClientRect();
+  const x = clientX - bounds.left;
+  const y = clientY - bounds.top;
+  return (
+    state.keywordLabelBoxes.find(
+      ({ box }) =>
+        x >= box.left && x <= box.right && y >= box.top && y <= box.bottom,
+    )?.keyword || null
+  );
+}
 
 function nearestPoint(clientX, clientY) {
   const bounds = canvas.getBoundingClientRect();
@@ -1382,6 +2032,34 @@ function nearestPoint(clientX, clientY) {
 
 function showTooltip(event) {
   if (state.dragging) return;
+  const keyword = keywordLabelAt(event.clientX, event.clientY);
+  if (keyword) {
+    tooltip.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = keyword.label;
+    const details = document.createElement("span");
+    const kind =
+      keyword.promotion === "isolation"
+        ? "Promoted detailed island"
+        : keyword.promotion === "active"
+          ? "Promoted for these filters"
+          : keyword.level > 0
+            ? "Detailed topic"
+            : "Overview topic";
+    const count = Number(keyword.activity_count || keyword.publication_count || 0);
+    details.textContent = `${kind} · ${keywordDescription(keyword)} · ${count.toLocaleString()} publication${count === 1 ? "" : "s"} · click to filter`;
+    tooltip.append(heading, details);
+    const bounds = canvas.getBoundingClientRect();
+    const pointerX = event.clientX - bounds.left;
+    const pointerY = event.clientY - bounds.top;
+    const tooltipWidth = Math.min(368, bounds.width - 32);
+    tooltip.style.left = `${Math.min(pointerX + 14, bounds.width - tooltipWidth - 12)}px`;
+    tooltip.style.top = `${Math.max(12, pointerY - 78)}px`;
+    tooltip.hidden = false;
+    canvas.style.cursor = "pointer";
+    return;
+  }
+  canvas.style.removeProperty("cursor");
   const nearest = nearestPoint(event.clientX, event.clientY);
   if (!nearest) {
     tooltip.hidden = true;
@@ -1404,6 +2082,7 @@ function showTooltip(event) {
 }
 
 function showDetails(point) {
+  if (!resultsPanel.hidden) closeResultsPanel({ focus: false });
   state.selectedWorkId = point.work_id;
   detailTitle.textContent = point.title;
   const year = point.year || "Year unavailable";
@@ -1449,12 +2128,27 @@ function zoomView(multiplier) {
   scheduleDraw();
 }
 
-function fitPoints(points) {
+function fitPoints(points, { centralFraction = 1 } = {}) {
   if (!points.length) return false;
   const bounds = canvas.getBoundingClientRect();
-  const view = core.fitView(points, bounds.width, bounds.height);
+  const view = core.fitView(points, bounds.width, bounds.height, {
+    centralFraction,
+  });
   if (!view) return false;
-  Object.assign(state, view);
+  state.scale = view.scale;
+  state.offsetX = view.offsetX;
+  state.offsetY = view.offsetY;
+  if (centralFraction < 1 && view.excludedCount > 0) {
+    fitNote.textContent = `Focused on the central ${Math.round(
+      centralFraction * 100,
+    )}% · ${view.excludedCount.toLocaleString()} outlier${
+      view.excludedCount === 1 ? "" : "s"
+    } remain available`;
+  } else if (points === state.matchedPoints && state.filtersActive) {
+    fitNote.textContent = "Showing every matching publication.";
+  } else {
+    fitNote.textContent = "";
+  }
   tooltip.hidden = true;
   scheduleDraw();
   return true;
@@ -1540,6 +2234,13 @@ canvas.addEventListener("pointercancel", stopDragging);
 
 canvas.addEventListener("click", (event) => {
   if (state.dragDistance > 5) return;
+  const keyword = keywordLabelAt(event.clientX, event.clientY);
+  if (keyword) {
+    topicFilter.add(keyword.keyword_id, { focus: false });
+    fitPoints(state.matchedPoints, { centralFraction: 0.98 });
+    canvas.focus({ preventScroll: true });
+    return;
+  }
   const nearest = nearestPoint(event.clientX, event.clientY);
   if (nearest) showDetails(nearest.point);
 });
@@ -1578,6 +2279,7 @@ canvas.addEventListener("keydown", (event) => {
 });
 
 canvas.addEventListener("pointerleave", () => {
+  canvas.style.removeProperty("cursor");
   if (!state.dragging) tooltip.hidden = true;
 });
 
@@ -1592,6 +2294,54 @@ selectedTitles.addEventListener("click", (event) => {
   if (!button) return;
   state.activeTitleTerms.delete(button.dataset.titleQuery);
   renderSelectedTitles();
+  applyFilters();
+});
+
+function applyYearInputs() {
+  const minimum = yearMinimumInput.value === ""
+    ? null
+    : yearMinimumInput.valueAsNumber;
+  const maximum = yearMaximumInput.value === ""
+    ? null
+    : yearMaximumInput.valueAsNumber;
+  const invalid =
+    (Number.isFinite(minimum) && !Number.isInteger(minimum)) ||
+    (Number.isFinite(maximum) && !Number.isInteger(maximum)) ||
+    (Number.isFinite(minimum) &&
+      Number.isFinite(maximum) &&
+      minimum > maximum);
+  yearMaximumInput.setCustomValidity(
+    invalid ? "The ending year must be at least the starting year." : "",
+  );
+  if (invalid) {
+    yearMaximumInput.reportValidity();
+    return;
+  }
+  state.yearMinimum = Number.isFinite(minimum) ? minimum : null;
+  state.yearMaximum = Number.isFinite(maximum) ? maximum : null;
+  applyFilters();
+}
+
+yearMinimumInput.addEventListener("change", applyYearInputs);
+yearMaximumInput.addEventListener("change", applyYearInputs);
+yearPresets.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-year-preset]");
+  if (!button || !Number.isFinite(state.actualYearMaximum)) return;
+  const preset = button.dataset.yearPreset;
+  if (preset === "all") {
+    state.yearMinimum = null;
+    state.yearMaximum = null;
+  } else {
+    const years = Number(preset);
+    state.yearMaximum = state.actualYearMaximum;
+    state.yearMinimum = Math.max(
+      state.actualYearMinimum,
+      state.actualYearMaximum - years + 1,
+    );
+  }
+  yearMinimumInput.value = state.yearMinimum ?? "";
+  yearMaximumInput.value = state.yearMaximum ?? "";
+  yearMaximumInput.setCustomValidity("");
   applyFilters();
 });
 
@@ -1613,6 +2363,7 @@ document.querySelectorAll('input[name="color-mode"]').forEach((input) => {
     if (!input.checked) return;
     state.colorMode = input.value;
     renderLegend();
+    syncUrlState();
     scheduleDraw();
   });
 });
@@ -1623,6 +2374,7 @@ document.querySelectorAll('input[name="size-mode"]').forEach((input) => {
     state.sizeMode = input.value;
     renderSizeLegend();
     tooltip.hidden = true;
+    syncUrlState();
     scheduleDraw();
   });
 });
@@ -1641,17 +2393,17 @@ mapLegend.addEventListener("click", (event) => {
 });
 
 clearFiltersButton.addEventListener("click", () => {
-  titleSearch.value = "";
-  state.activeTitleTerms.clear();
-  renderSelectedTitles();
-  authorFilter.clear();
-  departmentFilter.clear();
+  resetFilters();
   applyFilters();
 });
 
 zoomResultsButton.addEventListener("click", () => {
+  fitPoints(state.matchedPoints, { centralFraction: 0.98 });
+});
+showAllResultsButton.addEventListener("click", () => {
   fitPoints(state.matchedPoints);
 });
+openResultsButton.addEventListener("click", openResultsPanel);
 resetViewButton.addEventListener("click", resetView);
 mapZoomInButton.addEventListener("click", () => {
   zoomView(1.25);
@@ -1671,12 +2423,45 @@ toggleFiltersButton.addEventListener("click", () => {
 toggleLegendButton.addEventListener("click", () => {
   toggleCompactPanel("legend");
 });
+toggleResultsButton.addEventListener("click", () => {
+  if (!resultsPanel.hidden && resultsPanel.classList.contains("mobile-open")) {
+    closeResultsPanel();
+  } else {
+    openResultsPanel();
+  }
+});
 compactLayoutQuery.addEventListener("change", () => setCompactPanel());
 closeDetail.addEventListener("click", () => {
   detailPanel.hidden = true;
   state.selectedWorkId = "";
   canvas.focus();
   scheduleDraw();
+});
+closeResultsButton.addEventListener("click", closeResultsPanel);
+copyViewButton.addEventListener("click", copyViewLink);
+exportResultsButton.addEventListener("click", exportResultsCsv);
+resultsSort.addEventListener("change", () => {
+  state.resultsVisibleLimit = RESULTS_PAGE_SIZE;
+  renderResults();
+});
+showMoreResultsButton.addEventListener("click", () => {
+  state.resultsVisibleLimit += RESULTS_PAGE_SIZE;
+  renderResults();
+});
+resultsList.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-work-id]");
+  if (!button) return;
+  const point = state.points.find(
+    (candidate) => candidate.work_id === button.dataset.workId,
+  );
+  if (!point) return;
+  closeResultsPanel({ focus: false });
+  showDetails(point);
+  detailPanel.focus({ preventScroll: true });
+});
+window.addEventListener("popstate", () => {
+  restoreUrlState();
+  resetView();
 });
 window.addEventListener("research-map-theme-change", refreshThemeColors);
 if ("ResizeObserver" in window) {
@@ -1850,6 +2635,7 @@ async function fetchJson(
 }
 
 function setLoadingState() {
+  state.ready = false;
   resetLoadingProgress();
   statusElement.textContent = "Loading the publication landscape…";
   statusElement.classList.remove("error", "warning");
@@ -1858,6 +2644,9 @@ function setLoadingState() {
   mapControls.inert = true;
   toggleFiltersButton.disabled = true;
   toggleLegendButton.disabled = true;
+  toggleResultsButton.disabled = true;
+  copyViewButton.disabled = true;
+  resultsPanel.hidden = true;
   filterPanel.setAttribute("aria-busy", "true");
   mapColumn.setAttribute("aria-busy", "true");
   canvas.removeAttribute("aria-disabled");
@@ -1865,14 +2654,18 @@ function setLoadingState() {
 }
 
 function setReadyState() {
+  state.ready = true;
   loadingOverlay.hidden = true;
   retryLoadButton.hidden = true;
   filterControls.inert = false;
   mapControls.inert = false;
   toggleFiltersButton.disabled = false;
   toggleLegendButton.disabled = false;
+  toggleResultsButton.disabled = state.matchedPoints.length === 0;
+  copyViewButton.disabled = false;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
+  syncUrlState();
 }
 
 function setUnavailableState(error) {
@@ -1882,6 +2675,8 @@ function setUnavailableState(error) {
   state.matchedPoints = [];
   state.drawablePoints = [];
   state.keywords = [];
+  state.keywordLabelPlan = [];
+  state.keywordLabelBoxes = [];
   state.keywordLevels = [];
   state.keywordById = new Map();
   statusElement.textContent =
@@ -1893,6 +2688,9 @@ function setUnavailableState(error) {
   mapControls.inert = true;
   toggleFiltersButton.disabled = false;
   toggleLegendButton.disabled = false;
+  toggleResultsButton.disabled = true;
+  copyViewButton.disabled = true;
+  resultsPanel.hidden = true;
   filterPanel.setAttribute("aria-busy", "false");
   mapColumn.setAttribute("aria-busy", "false");
   canvas.setAttribute("aria-disabled", "true");
@@ -1905,12 +2703,22 @@ function setUnavailableState(error) {
 
 function resetFilters() {
   titleSearch.value = "";
+  topicSearch.value = "";
   state.activeTitleTerms.clear();
+  state.activeTopics.clear();
   state.activeDepartments.clear();
   state.activeFaculty.clear();
+  state.yearMinimum = null;
+  state.yearMaximum = null;
+  yearMinimumInput.value = "";
+  yearMaximumInput.value = "";
+  yearMaximumInput.setCustomValidity("");
+  fitNote.textContent = "";
   renderSelectedTitles();
+  topicFilter.renderSelected();
   authorFilter.renderSelected();
   departmentFilter.renderSelected();
+  updateTopicSelectionNote();
 }
 
 async function loadMap() {
@@ -1965,22 +2773,32 @@ async function loadMap() {
     state.yearPalette = [];
     state.citationPalette = [];
     state.yearRange = null;
+    state.actualYearMinimum = null;
+    state.actualYearMaximum = null;
     state.citationMaximum = 0;
     state.citationMaximumClipped = false;
+    state.facetCounts = {
+      keywordCounts: new Map(),
+      departmentCounts: new Map(),
+      facultyCounts: new Map(),
+    };
+    state.colorMode = "department";
+    state.sizeMode = "none";
+    state.displayMode = "highlight";
     state.selectedWorkId = "";
     detailPanel.hidden = true;
+    resultsPanel.hidden = true;
     if (artifact.warnings.length) console.warn(...artifact.warnings);
 
     populateLayouts();
     initializeFacultyColors();
     initializeDepartmentColors();
     initializeSequentialColors();
-    resetFilters();
     const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
     state.sourceLabel = updated
       ? `newest Scholar profile refresh ${updated}`
       : "no verified Scholar profile refresh date";
-    applyFilters();
+    restoreUrlState();
     resizeCanvas();
     resetView();
     setReadyState();

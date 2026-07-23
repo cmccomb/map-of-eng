@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const { test, expect } = require("@playwright/test");
 const AxeBuilder = require("@axe-core/playwright").default;
 const { makeArtifact, makeLargeArtifact } = require("../fixtures/artifact.js");
@@ -285,6 +286,103 @@ test("author and department comboboxes support keyboard OR/AND filtering", async
   await expect(page.locator("#zoom-results")).toBeDisabled();
 });
 
+test("topic and year filters use contextual counts and survive a permalink reload", async ({
+  page,
+}) => {
+  await openMap(page);
+
+  await chooseComboOption(page, "#topic-search", "robot control");
+  await expectPublicationStatus(page, "2 of 8 publications match");
+  await expect(page.locator("#selected-topics")).toContainText("robot control");
+  await expect(page.locator("#topic-selection-note")).toContainText(
+    "Detailed topic",
+  );
+
+  const authorSearch = page.locator("#author-search");
+  await authorSearch.fill("Alice");
+  await expect(
+    page.getByRole("option", { name: "Alice Adams 1 works" }),
+  ).toBeVisible();
+  await authorSearch.press("Escape");
+
+  await page.getByRole("button", { name: "Last 5" }).click();
+  await expectPublicationStatus(page, "1 of 8 publications match");
+  await expect(page.locator("#year-min")).toHaveValue("2021");
+  await expect(page.locator("#year-max")).toHaveValue("2025");
+  await expect(page).toHaveURL(/t=keyword-1-1/);
+  await expect(page).toHaveURL(/ymin=2021/);
+
+  await page.reload();
+  await expect(page.locator(".filter-panel")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expectPublicationStatus(page, "1 of 8 publications match");
+  await expect(page.locator("#selected-topics")).toContainText("robot control");
+  await expect(page.locator("#year-min")).toHaveValue("2021");
+});
+
+test("results surface summarizes, sorts, exports, and remains accessible", async ({
+  page,
+}) => {
+  await openMap(page);
+  await addTitleTerm(page, "robot");
+  await expectPublicationStatus(page, "2 of 8 publications match");
+
+  await page.locator("#open-results").click();
+  const panel = page.locator("#results-panel");
+  await expect(panel).toBeVisible();
+  await expect(page.locator("#results-summary")).toHaveText(
+    "2 of 8 publications",
+  );
+  await expect(page.locator("#results-list .result-item")).toHaveCount(2);
+  await expect(page.locator("#results-list .result-item").first()).toContainText(
+    "Soft Robot Control",
+  );
+  await expect(page.locator("#results-topics li")).toHaveCount(2);
+
+  const accessibility = await new AxeBuilder({ page })
+    .include("#results-panel")
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-results").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(
+    "cmu-engineering-publications-filtered.csv",
+  );
+  const downloadPath = await download.path();
+  const csv = fs.readFileSync(downloadPath, "utf8");
+  expect(csv).toContain("Robotic Grasp Planning");
+  expect(csv).toContain("Topic path");
+});
+
+test("zoom to matches trims spatial outliers and can restore every match", async ({
+  page,
+}) => {
+  const artifact = makeLargeArtifact(100);
+  artifact.points.forEach((point, index) => {
+    point.title = `Focus publication ${index}`;
+    const outlier = index >= 98;
+    point.pca_x = outlier ? 0.95 : ((index % 10) - 5) * 0.005;
+    point.pca_y = outlier ? -0.95 : ((index % 7) - 3) * 0.005;
+    point.tsne_x = point.pca_x;
+    point.tsne_y = point.pca_y;
+  });
+  await openMap(page, artifact);
+  await addTitleTerm(page, "focus");
+
+  await page.locator("#zoom-results").click();
+  await expect(page.locator("#fit-note")).toContainText(
+    "central 98% · 2 outliers",
+  );
+  await page.locator("#show-all-results").click();
+  await expect(page.locator("#fit-note")).toHaveText(
+    "Showing every matching publication.",
+  );
+});
+
 test("department and faculty modes recolor the canvas and expose every represented color", async ({
   page,
 }) => {
@@ -463,6 +561,49 @@ test("topic keywords annotate the map and dot sizing reveals age or impact", asy
   );
 });
 
+test("isolated and active child topics promote into the overview", async ({ page }) => {
+  const artifact = makeLargeArtifact(120);
+  const parent = artifact.keywords.find(
+    (keyword) => keyword.keyword_id === "keyword-1",
+  );
+  const island = artifact.keywords.find(
+    (keyword) => keyword.keyword_id === "keyword-1-1",
+  );
+  parent.coordinates.tsne = { x: 0, y: 0 };
+  island.coordinates.tsne = { x: 0, y: -0.9 };
+  artifact.keywords
+    .filter((keyword) => keyword.level === 1 && keyword.keyword_id !== island.keyword_id)
+    .forEach((keyword, index) => {
+      const keywordParent = artifact.keywords.find(
+        (candidate) => candidate.keyword_id === keyword.parent_keyword_id,
+      );
+      keyword.coordinates.tsne = {
+        x: keywordParent.coordinates.tsne.x + 0.02 * ((index % 2) + 1),
+        y: keywordParent.coordinates.tsne.y + 0.02 * ((index % 3) + 1),
+      };
+    });
+  artifact.points.forEach((point, index) => {
+    const isIsland = index < 60;
+    point.keyword_ids = ["keyword-1", isIsland ? "keyword-1-1" : "keyword-1-2"];
+    point.title = `${isIsland ? "Island" : "Mainland"} publication ${index}`;
+    point.tsne_x = (index % 10) * 0.002;
+    point.tsne_y = (isIsland ? -0.9 : 0) + (index % 7) * 0.002;
+  });
+  await openMap(page, artifact);
+
+  const canvas = page.locator("#research-map");
+  await expect(canvas).toHaveAttribute(
+    "data-promoted-keywords",
+    /keyword-1-1/,
+  );
+  await addTitleTerm(page, "island");
+  await expectPublicationStatus(page, "60 of 120 publications match");
+  await expect(canvas).toHaveAttribute(
+    "data-promoted-keywords",
+    /keyword-1-1/,
+  );
+});
+
 test("layout changes geometry while preserving filters, color mode, and details", async ({
   page,
 }) => {
@@ -533,6 +674,7 @@ test("mobile starts map-first and opens one panel at a time", async ({
 
   const settings = page.locator("#toggle-filters");
   const colorKey = page.locator("#toggle-legend");
+  const results = page.locator("#toggle-results");
   await settings.click();
   await expect(settings).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".filter-panel")).toBeVisible();
@@ -544,8 +686,14 @@ test("mobile starts map-first and opens one panel at a time", async ({
   await expect(page.locator(".filter-panel")).toBeHidden();
   await expect(page.locator(".legend-panel")).toBeVisible();
 
-  await colorKey.click();
+  await results.click();
+  await expect(colorKey).toHaveAttribute("aria-expanded", "false");
+  await expect(results).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".legend-panel")).toBeHidden();
+  await expect(page.locator("#results-panel")).toBeVisible();
+
+  await results.click();
+  await expect(page.locator("#results-panel")).toBeHidden();
 });
 
 test("a transient artifact failure recovers automatically", async ({

@@ -24,7 +24,7 @@
   <body>
     <main class="workspace">
       <nav class="mobile-toolbar" aria-label="Map panels">
-        <span class="mobile-brand">CMU research map</span>
+        <span class="mobile-brand">CMU map</span>
         <button
           id="toggle-filters"
           type="button"
@@ -43,6 +43,15 @@
         >
           Color key
         </button>
+        <button
+          id="toggle-results"
+          type="button"
+          aria-controls="results-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Results
+        </button>
       </nav>
 
       <aside
@@ -54,17 +63,28 @@
         <section class="panel-intro" aria-labelledby="map-title">
           <h1 id="map-title">Engineering Research at CMU</h1>
           <p class="dek">
-            Every point is a publication from an engineering faculty member at
-            CMU. The closer two points are, the more similar their content.
+            Each dot is a faculty publication; nearby dots share similar
+            content.
           </p>
           <p id="map-status" class="status" role="status" aria-live="polite">
             Loading the publication landscape…
           </p>
-          <a
-            class="dataset-link"
-            href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
-            >Access the full dataset here.<span aria-hidden="true">↗</span></a
-          >
+          <div class="intro-links">
+            <a
+              class="dataset-link"
+              href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
+              aria-label="Open the full CMU Engineering publication dataset"
+              >Full dataset <span aria-hidden="true">↗</span></a
+            >
+            <button
+              id="copy-view"
+              class="link-button"
+              type="button"
+              disabled
+            >
+              Copy view link
+            </button>
+          </div>
           <fieldset class="appearance-fieldset">
             <legend>Appearance</legend>
             <div class="theme-control">
@@ -95,7 +115,8 @@
         <div class="filter-controls" inert>
           <div class="panel-heading">
             <div>
-              <h2>Settings</h2>
+              <h2>Filter publications</h2>
+              <p>Across fields: AND · within fields: OR</p>
             </div>
             <button
               id="clear-filters"
@@ -126,6 +147,39 @@
               class="selected-filters"
               aria-label="Selected publication title terms"
             ></div>
+          </div>
+
+          <div class="topic-field">
+            <label class="field" for="topic-search">
+              <span>Research topics</span>
+              <input
+                id="topic-search"
+                type="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="topic-suggestions"
+                aria-expanded="false"
+                autocomplete="off"
+                placeholder="Search map topics"
+              />
+            </label>
+            <ul
+              id="topic-suggestions"
+              class="suggestions"
+              role="listbox"
+              hidden
+            ></ul>
+            <div
+              id="selected-topics"
+              class="selected-filters"
+              aria-label="Selected research topics"
+            ></div>
+            <p
+              id="topic-selection-note"
+              class="field-note topic-selection-note"
+              aria-live="polite"
+              hidden
+            ></p>
           </div>
 
           <div class="author-field">
@@ -182,6 +236,26 @@
             ></div>
           </div>
 
+          <fieldset class="year-filter-fieldset">
+            <legend>Publication years</legend>
+            <div class="year-range-inputs">
+              <label>
+                <span>From</span>
+                <input id="year-min" type="number" inputmode="numeric" />
+              </label>
+              <span aria-hidden="true">–</span>
+              <label>
+                <span>Through</span>
+                <input id="year-max" type="number" inputmode="numeric" />
+              </label>
+            </div>
+            <div class="year-presets" aria-label="Publication year presets">
+              <button type="button" data-year-preset="5">Last 5</button>
+              <button type="button" data-year-preset="10">Last 10</button>
+              <button type="button" data-year-preset="all">All years</button>
+            </div>
+          </fieldset>
+
           <fieldset class="layout-fieldset">
             <legend>Map layout</legend>
             <div id="layout-options" class="segmented-control"></div>
@@ -193,7 +267,7 @@
           </fieldset>
 
           <fieldset class="color-fieldset">
-            <legend>Color matches by</legend>
+            <legend>Color by</legend>
             <div class="segmented-control color-control">
               <label>
                 <input type="radio" name="color-mode" value="title" />
@@ -224,7 +298,7 @@
           </fieldset>
 
           <fieldset class="size-fieldset">
-            <legend>Dot size</legend>
+            <legend>Size by</legend>
             <div class="segmented-control size-control">
               <label>
                 <input
@@ -233,7 +307,7 @@
                   value="none"
                   checked
                 />
-                <span>None</span>
+                <span>Uniform</span>
               </label>
               <label>
                 <input type="radio" name="size-mode" value="oldest" />
@@ -280,6 +354,15 @@
               Reset view
             </button>
           </div>
+          <div class="secondary-actions">
+            <button id="show-all-results" class="text-button" type="button">
+              Show every match
+            </button>
+            <button id="open-results" class="text-button" type="button">
+              View results
+            </button>
+          </div>
+          <p id="fit-note" class="field-note fit-note" aria-live="polite"></p>
         </div>
       </aside>
 
@@ -409,6 +492,52 @@
           >
             Open publication source <span aria-hidden="true">↗</span>
           </a>
+        </aside>
+
+        <aside
+          id="results-panel"
+          class="results-panel"
+          aria-labelledby="results-title"
+          tabindex="-1"
+          hidden
+        >
+          <button
+            id="close-results"
+            class="close-detail"
+            type="button"
+            aria-label="Close matching publications"
+          >
+            ×
+          </button>
+          <div class="results-heading">
+            <h2 id="results-title">Matching publications</h2>
+            <p id="results-summary" aria-live="polite"></p>
+          </div>
+          <div id="results-metrics" class="results-metrics"></div>
+          <section aria-labelledby="top-topics-title">
+            <h3 id="top-topics-title">Leading detailed topics</h3>
+            <ol id="results-topics" class="results-topics"></ol>
+          </section>
+          <div class="results-toolbar">
+            <label for="results-sort">
+              <span>Sort</span>
+              <select id="results-sort">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="citations">Most cited</option>
+                <option value="title">Title</option>
+              </select>
+            </label>
+            <button id="export-results" type="button">Download CSV</button>
+          </div>
+          <ol
+            id="results-list"
+            class="results-list"
+            aria-label="Matching publication results"
+          ></ol>
+          <button id="show-more-results" class="secondary-button" type="button">
+            Show more
+          </button>
         </aside>
       </section>
     </main>
