@@ -561,7 +561,7 @@ test("topic keywords annotate the map and dot sizing reveals age or impact", asy
   );
 });
 
-test("isolated and active child topics promote into the overview", async ({ page }) => {
+test("isolated and active child topics join the overview", async ({ page }) => {
   const artifact = makeLargeArtifact(120);
   const parent = artifact.keywords.find(
     (keyword) => keyword.keyword_id === "keyword-1",
@@ -593,13 +593,19 @@ test("isolated and active child topics promote into the overview", async ({ page
 
   const canvas = page.locator("#research-map");
   await expect(canvas).toHaveAttribute(
-    "data-promoted-keywords",
+    "data-overview-keywords",
     /keyword-1-1/,
   );
-  await addTitleTerm(page, "island");
+  await chooseComboOption(page, "#topic-search", "robot control");
   await expectPublicationStatus(page, "60 of 120 publications match");
+  await expect(page.locator("#topic-selection-note")).toContainText(
+    "Overview topic",
+  );
+  await expect(page.locator("#topic-selection-note")).not.toContainText(
+    "promoted",
+  );
   await expect(canvas).toHaveAttribute(
-    "data-promoted-keywords",
+    "data-overview-keywords",
     /keyword-1-1/,
   );
 });

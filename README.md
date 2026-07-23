@@ -39,8 +39,10 @@ matches. A nested topic can promote when it covers at least 5% of the matches
 strongest promotions are kept, their over-broad parents demote, and labels
 follow the active points. Each publication detail card shows its original
 overview-to-detail topic path. Topic labels are actionable: pointing at one
-explains its level, path, support, and promotion status; selecting it adds the
-same topic filter available from the keyboard-accessible topic search.
+explains its current level, path, and support; selecting it adds the same topic
+filter available from the keyboard-accessible topic search. Promoted topics use
+the same label appearance, visibility rules, and interaction treatment as every
+other topic at their current level.
 
 Visitors can keep dots uniform or size them by oldest publication, newest
 publication, or citation count. Year sizing uses the same robust central range
