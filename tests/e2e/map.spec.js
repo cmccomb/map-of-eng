@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const { test, expect } = require("@playwright/test");
 const AxeBuilder = require("@axe-core/playwright").default;
-const { makeArtifact, makeLargeArtifact } = require("../fixtures/artifact.js");
+const { makeArtifact, makeSchoolArtifact, makeLargeArtifact } = require("../fixtures/artifact.js");
 
 async function serveArtifact(page, artifact = makeArtifact()) {
   await page.route("https://huggingface.co/**", async (route) => {
@@ -50,7 +50,7 @@ test("loads cleanly with useful defaults and a complete department key", async (
 
   await expectPublicationStatus(page, "8 publications");
   await expect(page.locator("#map-status")).toContainText(
-    "newest Scholar profile refresh Jul 17, 2026",
+    "newest Scholar profile refresh in full corpus Jul 17, 2026",
   );
   await expect(page.locator("#clear-filters")).toBeDisabled();
   await expect(page.locator("#zoom-results")).toBeDisabled();
@@ -86,6 +86,19 @@ test("loads cleanly with useful defaults and a complete department key", async (
     [...contentOrder].sort((left, right) => left - right),
   );
   expect(consoleErrors).toEqual([]);
+});
+
+test("school selection includes joint publications and persists in the view URL", async ({ page }) => {
+  await openMap(page, makeSchoolArtifact());
+  await expect(page.locator("#school-field")).toBeVisible();
+  await chooseComboOption(page, "#school-search", "Computer Science");
+  await expectPublicationStatus(page, "2 of 10 publications match");
+  await expect(page).toHaveURL(/schools=scs/);
+  await chooseComboOption(page, "#department-search", "Mechanical Engineering");
+  await expectPublicationStatus(page, "1 of 10 publications match");
+  await page.reload();
+  await expect(page.locator("#selected-schools")).toContainText("School of Computer Science");
+  await expectPublicationStatus(page, "1 of 10 publications match");
 });
 
 test("reports determinate progress while publication data streams", async ({

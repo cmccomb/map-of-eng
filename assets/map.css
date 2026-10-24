@@ -397,6 +397,8 @@ h1 {
 
 .title-field + .topic-field,
 .topic-field + .author-field,
+.author-field + .school-field,
+.school-field + .department-field,
 .author-field + .department-field {
   margin-top: 0.72rem;
 }
@@ -470,6 +472,7 @@ select:focus {
 
 .author-field,
 .topic-field,
+.school-field,
 .department-field {
   position: relative;
 }

@@ -92,6 +92,20 @@ and artifact builder live in
 The former department-specific `map-of-*` repositories are archived; their
 views are now filters here.
 
+## School-aware pilot
+
+The client accepts the additive `catalogs.schools`, department `school_id`, and
+publication `school_ids` fields from the shared pipeline. A school selection
+matches publications associated with any faculty member in that school, so a
+joint Engineering–SCS publication appears in either view. The `schools=scs`
+query parameter preserves the selection in a shared link. An older Engineering
+artifact without school fields is interpreted as Engineering only, and the
+school control stays hidden while only one school is available.
+
+The checked-in configuration still points to the published Engineering dataset.
+The SCS pilot uses a separate local artifact until the roster and coverage are
+reviewed for publication.
+
 The Pages deployment stamps CSS and JavaScript URLs with the deployed commit so
 browsers cannot combine a new page with cached assets from an older release.
 A daily workflow compares the current Hugging Face revision with the deployed

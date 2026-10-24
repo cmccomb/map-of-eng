@@ -13,12 +13,14 @@ const state = {
   matchedPoints: [],
   drawablePoints: [],
   screenPoints: [],
+  schools: [],
   departments: [],
   faculty: [],
   keywords: [],
   keywordLabelPlan: [],
   keywordLevels: [],
   layouts: [],
+  schoolById: new Map(),
   departmentById: new Map(),
   facultyById: new Map(),
   keywordById: new Map(),
@@ -34,6 +36,7 @@ const state = {
   citationMaximumClipped: false,
   activeTitleTerms: new Map(),
   activeTopics: new Set(),
+  activeSchools: new Set(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
   yearMinimum: null,
@@ -42,6 +45,7 @@ const state = {
   actualYearMaximum: null,
   facetCounts: {
     keywordCounts: new Map(),
+    schoolCounts: new Map(),
     departmentCounts: new Map(),
     facultyCounts: new Map(),
   },
@@ -60,6 +64,7 @@ const state = {
   dragDistance: 0,
   framePending: false,
   sourceLabel: "",
+  exportFileName: "cmu-engineering-publications-filtered.csv",
   omittedPointCount: 0,
   canvasWidth: 0,
   canvasHeight: 0,
@@ -151,6 +156,7 @@ function matchedBaseRadius() {
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
+const datasetLink = document.querySelector(".dataset-link");
 const filterPanel = document.querySelector(".filter-panel");
 const filterControls = document.querySelector(".filter-controls");
 const legendPanel = document.querySelector(".legend-panel");
@@ -177,6 +183,10 @@ const topicSelectionNote = document.querySelector("#topic-selection-note");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
+const schoolField = document.querySelector("#school-field");
+const schoolSearch = document.querySelector("#school-search");
+const schoolSuggestions = document.querySelector("#school-suggestions");
+const selectedSchools = document.querySelector("#selected-schools");
 const departmentSearch = document.querySelector("#department-search");
 const departmentSuggestions = document.querySelector("#department-suggestions");
 const selectedDepartments = document.querySelector("#selected-departments");
@@ -312,6 +322,7 @@ function preparePoint(point) {
     department_ids: Array.isArray(point.department_ids)
       ? point.department_ids
       : [],
+    school_ids: Array.isArray(point.school_ids) ? point.school_ids : [],
     faculty_ids: Array.isArray(point.faculty_ids) ? point.faculty_ids : [],
     _coordinates: coordinates,
     _title: point._title,
@@ -836,7 +847,7 @@ function updateStatus() {
   if (!matched && total) {
     emptyTitle.textContent = "No publications match this combination.";
     emptyCopy.textContent =
-      "Try a broader title, topic, author, department, or year selection.";
+      "Try a broader title, topic, author, school, department, or year selection.";
   } else if (!total) {
     emptyTitle.textContent = "No publications are available yet.";
     emptyCopy.textContent = "The data source loaded successfully but is empty.";
@@ -1346,7 +1357,7 @@ function exportResultsCsv() {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = "cmu-engineering-publications-filtered.csv";
+  link.download = state.exportFileName;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -1354,6 +1365,7 @@ function exportResultsCsv() {
 function serializedUiState() {
   return core.serializeMapState({
     titleQueries: [...state.activeTitleTerms.keys()],
+    schoolIds: state.activeSchools,
     departmentIds: state.activeDepartments,
     facultyIds: state.activeFaculty,
     keywordIds: state.activeTopics,
@@ -1414,6 +1426,9 @@ function restoreUrlState(search = window.location.search) {
     state.activeTitleTerms.set(query, query);
     ensureTitleColor(query);
   }
+  parsed.schoolIds
+    .filter((id) => state.schoolById.has(id))
+    .forEach((id) => state.activeSchools.add(id));
   parsed.departmentIds
     .filter((id) => state.departmentById.has(id))
     .forEach((id) => state.activeDepartments.add(id));
@@ -1484,6 +1499,7 @@ function restoreUrlState(search = window.location.search) {
   renderSelectedTitles();
   topicFilter.renderSelected();
   authorFilter.renderSelected();
+  schoolFilter.renderSelected();
   departmentFilter.renderSelected();
   applyFilters({ syncUrl: false });
   state.restoringUrlState = false;
@@ -1492,6 +1508,7 @@ function restoreUrlState(search = window.location.search) {
 function currentFilterOptions() {
   return {
     titleQueries: [...state.activeTitleTerms.keys()],
+    schoolIds: state.activeSchools,
     departmentIds: state.activeDepartments,
     facultyIds: state.activeFaculty,
     keywordIds: state.activeTopics,
@@ -1534,6 +1551,7 @@ function applyFilters({ syncUrl = true } = {}) {
   state.filtersActive = Boolean(
     state.activeTitleTerms.size ||
     state.activeTopics.size ||
+    state.activeSchools.size ||
     state.activeDepartments.size ||
     state.activeFaculty.size ||
     Number.isFinite(state.yearMinimum) ||
@@ -1567,6 +1585,7 @@ function applyFilters({ syncUrl = true } = {}) {
   refreshKeywordLabelPlan();
   updateTopicSelectionNote();
   authorFilter.refresh();
+  schoolFilter.refresh();
   departmentFilter.refresh();
   topicFilter.refresh();
   if (!resultsPanel.hidden) renderResults();
@@ -1934,6 +1953,25 @@ const authorFilter = createMultiSelect({
   itemAvailable: (person) =>
     (state.facetCounts.facultyCounts.get(person.person_id) ??
       person.publication_count) > 0,
+});
+
+const schoolFilter = createMultiSelect({
+  input: schoolSearch,
+  suggestionsList: schoolSuggestions,
+  selectedList: selectedSchools,
+  optionPrefix: "school",
+  items: () => state.schools,
+  activeIds: state.activeSchools,
+  itemId: (school) => school.school_id,
+  itemLabel: (school) => school.title,
+  itemCount: (school) =>
+    state.facetCounts.schoolCounts.get(school.school_id) ??
+    school.publication_count,
+  itemAvailable: (school) =>
+    (state.facetCounts.schoolCounts.get(school.school_id) ??
+      school.publication_count) > 0,
+  showAllOnEmpty: true,
+  suggestionLimit: Number.POSITIVE_INFINITY,
 });
 
 const departmentFilter = createMultiSelect({
@@ -2687,6 +2725,7 @@ function resetFilters() {
   topicSearch.value = "";
   state.activeTitleTerms.clear();
   state.activeTopics.clear();
+  state.activeSchools.clear();
   state.activeDepartments.clear();
   state.activeFaculty.clear();
   state.yearMinimum = null;
@@ -2698,6 +2737,7 @@ function resetFilters() {
   renderSelectedTitles();
   topicFilter.renderSelected();
   authorFilter.renderSelected();
+  schoolFilter.renderSelected();
   departmentFilter.renderSelected();
   updateTopicSelectionNote();
 }
@@ -2713,6 +2753,14 @@ async function loadMap() {
     );
     if (config.heading) titleElement.textContent = config.heading;
     document.title = `${config.title} Map`;
+    if (config.dataset_id) {
+      datasetLink.href = `https://huggingface.co/datasets/${config.dataset_id}`;
+      datasetLink.setAttribute(
+        "aria-label",
+        `Open the full ${config.title} publication dataset`,
+      );
+      state.exportFileName = `${config.dataset_id.split("/")[1]}-filtered.csv`;
+    }
     const artifactDocument = await fetchJson(
       core.artifactUrl(config),
       "Publication artifact",
@@ -2725,6 +2773,7 @@ async function loadMap() {
     );
     const artifact = core.parseArtifact(artifactDocument);
 
+    state.schools = artifact.catalogs.schools;
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
     state.keywords = artifact.keywords.map(prepareKeyword);
@@ -2736,6 +2785,10 @@ async function loadMap() {
     state.layoutId = state.layoutById.has(config.default_layout_id)
       ? config.default_layout_id
       : artifact.default_layout_id;
+    state.schoolById = new Map(
+      state.schools.map((item) => [item.school_id, item]),
+    );
+    schoolField.hidden = state.schools.length <= 1;
     state.departmentById = new Map(
       state.departments.map((item) => [item.department_id, item]),
     );
@@ -2760,6 +2813,7 @@ async function loadMap() {
     state.citationMaximumClipped = false;
     state.facetCounts = {
       keywordCounts: new Map(),
+      schoolCounts: new Map(),
       departmentCounts: new Map(),
       facultyCounts: new Map(),
     };
@@ -2777,8 +2831,8 @@ async function loadMap() {
     initializeSequentialColors();
     const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
     state.sourceLabel = updated
-      ? `newest Scholar profile refresh ${updated}`
-      : "no verified Scholar profile refresh date";
+      ? `newest Scholar profile refresh in full corpus ${updated}`
+      : "no verified Scholar profile refresh date in full corpus";
     restoreUrlState();
     resizeCanvas();
     resetView();

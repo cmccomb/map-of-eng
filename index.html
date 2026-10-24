@@ -209,6 +209,33 @@
             ></div>
           </div>
 
+          <div class="school-field" id="school-field" hidden>
+            <label class="field" for="school-search">
+              <span>CMU schools</span>
+              <input
+                id="school-search"
+                type="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="school-suggestions"
+                aria-expanded="false"
+                autocomplete="off"
+                placeholder="Search schools"
+              />
+            </label>
+            <ul
+              id="school-suggestions"
+              class="suggestions"
+              role="listbox"
+              hidden
+            ></ul>
+            <div
+              id="selected-schools"
+              class="selected-filters"
+              aria-label="Selected CMU schools"
+            ></div>
+          </div>
+
           <div class="department-field">
             <label class="field" for="department-search">
               <span>Departments and programs</span>
