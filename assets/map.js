@@ -291,6 +291,17 @@ function facultyNames(point) {
     .filter(Boolean);
 }
 
+function curatedOnly(point) {
+  return point.source_types.includes("curated_verified") &&
+    !point.source_types.includes("scholar");
+}
+
+function citationText(point) {
+  return curatedOnly(point)
+    ? "citation count unavailable"
+    : `${Number(point.citation_count || 0).toLocaleString()} citations`;
+}
+
 function departmentNames(point) {
   return point.department_ids
     .map((departmentId) => state.departmentById.get(departmentId)?.title)
@@ -1227,19 +1238,23 @@ function renderResults() {
     ).length;
     appendResultMetric(overlap.toLocaleString(), "match every selected entity");
   } else {
+    const knownCitationPoints = matched.filter((point) => !curatedOnly(point));
     appendResultMetric(
-      matched
+      knownCitationPoints
         .reduce(
           (total, point) => total + (Number(point.citation_count) || 0),
           0,
         )
         .toLocaleString(),
-      "citations across matches",
+      knownCitationPoints.length === matched.length
+        ? "citations across matches"
+        : `known citations across matches; ${matched.length - knownCitationPoints.length} without counts`,
     );
   }
 
   const topicCounts = new Map();
   for (const point of matched) {
+    if (curatedOnly(point)) continue;
     for (const keywordId of point.keyword_ids) {
       if (state.keywordById.get(keywordId)?.level !== 1) continue;
       topicCounts.set(keywordId, (topicCounts.get(keywordId) || 0) + 1);
@@ -1267,7 +1282,9 @@ function renderResults() {
     });
   if (!resultsTopics.childElementCount) {
     const item = document.createElement("li");
-    item.textContent = "No detailed topic metadata available";
+    item.textContent = matched.some(curatedOnly)
+      ? "Automated topics not reviewed for verified records"
+      : "No detailed topic metadata available";
     resultsTopics.append(item);
   }
 
@@ -1283,9 +1300,7 @@ function renderResults() {
     const meta = document.createElement("span");
     const year = point.year || "Year unavailable";
     const faculty = facultyNames(point).join(", ") || point.authors;
-    meta.textContent = `${year} · ${faculty || "Authors unavailable"} · ${Number(
-      point.citation_count || 0,
-    ).toLocaleString()} citations`;
+    meta.textContent = `${year} · ${faculty || "Authors unavailable"} · ${citationText(point)}`;
     button.append(title, meta);
     item.append(button);
     resultsList.append(item);
@@ -2093,7 +2108,7 @@ function showTooltip(event) {
   const details = document.createElement("span");
   const faculty = facultyNames(point).join(", ") || "CMU faculty unavailable";
   const year = point.year ? ` · ${point.year}` : "";
-  details.textContent = `${faculty}${year} · ${Number(point.citation_count || 0).toLocaleString()} citations`;
+  details.textContent = `${faculty}${year} · ${citationText(point)}`;
   tooltip.append(heading, details);
   const bounds = canvas.getBoundingClientRect();
   const tooltipWidth = Math.min(368, bounds.width - 32);
@@ -2108,11 +2123,10 @@ function showDetails(point) {
   detailTitle.textContent = point.title;
   const year = point.year || "Year unavailable";
   const venue = point.venue || "Venue unavailable";
-  const citations = Number(point.citation_count || 0).toLocaleString();
   const observations = Number(point.observation_count || 1).toLocaleString();
-  detailMeta.textContent = `${year} · ${venue} · ${citations} citations · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
   const curated = point.source_types.includes("curated_verified");
   const scholar = point.source_types.includes("scholar");
+  detailMeta.textContent = `${year} · ${venue} · ${citationText(point)} · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
   detailProvenance.hidden = !point.source_types.length;
   detailProvenance.textContent = curated
     ? `${scholar ? "Google Scholar and " : ""}verified CMU/publisher record${scholar ? "" : " · not collected from Google Scholar"}${point.source_verified_at ? ` · checked ${point.source_verified_at}` : ""}`

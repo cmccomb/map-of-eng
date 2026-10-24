@@ -116,12 +116,19 @@ test("publication details disclose a separately verified record", async ({ page 
   await expect(page.locator("#detail-provenance")).toContainText(
     "not collected from Google Scholar",
   );
+  await expect(page.locator("#detail-meta")).toContainText("citation count unavailable");
   await expect(page.locator("#detail-keyword")).toHaveText(
     "Automated topic not reviewed for this verified record",
   );
   await expect(page.locator("#detail-verification-link")).toHaveAttribute(
     "href",
     "https://www.cmu.edu/math/people/faculty/tetali.html",
+  );
+  await page.locator("#open-results").click();
+  await expect(page.locator("#results-list")).toContainText("citation count unavailable");
+  await expect(page.locator("#results-metrics")).toContainText("without counts");
+  await expect(page.locator("#results-topics")).toContainText(
+    "Automated topics not reviewed for verified records",
   );
 });
 
