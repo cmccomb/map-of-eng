@@ -116,6 +116,9 @@ test("publication details disclose a separately verified record", async ({ page 
   await expect(page.locator("#detail-provenance")).toContainText(
     "not collected from Google Scholar",
   );
+  await expect(page.locator("#detail-keyword")).toHaveText(
+    "Automated topic not reviewed for this verified record",
+  );
   await expect(page.locator("#detail-verification-link")).toHaveAttribute(
     "href",
     "https://www.cmu.edu/math/people/faculty/tetali.html",

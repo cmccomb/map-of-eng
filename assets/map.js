@@ -2120,8 +2120,9 @@ function showDetails(point) {
   detailAuthors.textContent = point.authors || "Author list unavailable";
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
-  detailKeyword.textContent =
-    point.keyword_ids
+  detailKeyword.textContent = curated && !scholar
+    ? "Automated topic not reviewed for this verified record"
+    : point.keyword_ids
       .map((keywordId) => state.keywordById.get(keywordId)?.label)
       .filter(Boolean)
       .join(" › ") || "Unavailable";
