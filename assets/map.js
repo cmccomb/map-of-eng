@@ -212,11 +212,13 @@ const emptyCopy = document.querySelector("#empty-copy");
 const detailPanel = document.querySelector("#detail-panel");
 const detailTitle = document.querySelector("#detail-title");
 const detailMeta = document.querySelector("#detail-meta");
+const detailProvenance = document.querySelector("#detail-provenance");
 const detailAuthors = document.querySelector("#detail-authors");
 const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
 const detailKeyword = document.querySelector("#detail-keyword");
 const detailLink = document.querySelector("#detail-link");
+const detailVerificationLink = document.querySelector("#detail-verification-link");
 const closeDetail = document.querySelector("#close-detail");
 const resultsPanel = document.querySelector("#results-panel");
 const resultsSummary = document.querySelector("#results-summary");
@@ -2109,6 +2111,12 @@ function showDetails(point) {
   const citations = Number(point.citation_count || 0).toLocaleString();
   const observations = Number(point.observation_count || 1).toLocaleString();
   detailMeta.textContent = `${year} · ${venue} · ${citations} citations · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
+  const curated = point.source_types.includes("curated_verified");
+  const scholar = point.source_types.includes("scholar");
+  detailProvenance.hidden = !point.source_types.length;
+  detailProvenance.textContent = curated
+    ? `${scholar ? "Google Scholar and " : ""}verified CMU/publisher record${scholar ? "" : " · not collected from Google Scholar"}${point.source_verified_at ? ` · checked ${point.source_verified_at}` : ""}`
+    : "Google Scholar profile record";
   detailAuthors.textContent = point.authors || "Author list unavailable";
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
@@ -2126,6 +2134,16 @@ function showDetails(point) {
   } else {
     detailLink.removeAttribute("href");
     detailLink.hidden = true;
+  }
+  const separateVerificationUrl = point.source_verification_urls.find(
+    (url) => url !== point.source_url,
+  );
+  if (curated && separateVerificationUrl) {
+    detailVerificationLink.href = separateVerificationUrl;
+    detailVerificationLink.hidden = false;
+  } else {
+    detailVerificationLink.removeAttribute("href");
+    detailVerificationLink.hidden = true;
   }
   detailPanel.hidden = false;
   scheduleDraw();

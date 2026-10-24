@@ -133,6 +133,25 @@ test("artifact parser accepts additive fields and sanitizes publication links", 
   assert.deepEqual(artifact.points[0].school_ids, ["engineering"]);
 });
 
+test("artifact parser preserves verified-work provenance without unsafe links", () => {
+  const source = makeArtifact();
+  source.points[0].source_types = ["curated_verified", "curated_verified", "unknown"];
+  source.points[0].source_verified_at = "2026-10-24";
+  source.points[0].source_verification_urls = [
+    "https://www.cmu.edu/math/people/faculty/tetali.html",
+    "javascript:alert(1)",
+  ];
+  const point = core.parseArtifact(source).points[0];
+  assert.deepEqual(point.source_types, ["curated_verified"]);
+  assert.equal(point.source_verified_at, "2026-10-24");
+  assert.deepEqual(point.source_verification_urls, [
+    "https://www.cmu.edu/math/people/faculty/tetali.html",
+  ]);
+  const legacy = core.parseArtifact(makeArtifact()).points[0];
+  assert.deepEqual(legacy.source_types, []);
+  assert.equal(legacy.source_verified_at, "");
+});
+
 test("artifact parser preserves the school hierarchy and validates school IDs", () => {
   const parsed = core.parseArtifact(makeSchoolArtifact());
   assert.deepEqual(parsed.catalogs.schools.map((school) => school.school_id), ["engineering", "scs"]);

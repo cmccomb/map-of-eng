@@ -1370,6 +1370,10 @@ canvas.dragging {
   text-decoration: none;
 }
 
+.detail-link + .detail-link {
+  margin-left: 1rem;
+}
+
 .close-detail {
   position: absolute;
   top: 0.75rem;

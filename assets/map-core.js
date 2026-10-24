@@ -506,6 +506,17 @@
       ),
       doi: optionalString(point.doi, { maxLength: 1000 }),
       source_url: safeHttpUrl(point.source_url),
+      source_types: Array.isArray(point.source_types)
+        ? [...new Set(point.source_types.map(String))].filter((type) =>
+            ["scholar", "curated_verified"].includes(type),
+          )
+        : [],
+      source_verified_at: /^\d{4}-\d{2}-\d{2}$/.test(String(point.source_verified_at || ""))
+        ? String(point.source_verified_at)
+        : "",
+      source_verification_urls: Array.isArray(point.source_verification_urls)
+        ? [...new Set(point.source_verification_urls.map(safeHttpUrl).filter(Boolean))]
+        : [],
       keyword_ids: keywordIds,
       _title: normalizedText(point.title),
       _coordinates: coordinates,

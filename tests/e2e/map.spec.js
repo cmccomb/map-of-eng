@@ -101,6 +101,27 @@ test("school selection includes joint publications and persists in the view URL"
   await expectPublicationStatus(page, "1 of 10 publications match");
 });
 
+test("publication details disclose a separately verified record", async ({ page }) => {
+  const artifact = makeArtifact();
+  for (const point of artifact.points) {
+    point.source_types = ["curated_verified"];
+    point.source_verified_at = "2026-10-24";
+    point.source_verification_urls = ["https://www.cmu.edu/math/people/faculty/tetali.html"];
+  }
+  await openMap(page, artifact);
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-provenance")).toContainText(
+    "not collected from Google Scholar",
+  );
+  await expect(page.locator("#detail-verification-link")).toHaveAttribute(
+    "href",
+    "https://www.cmu.edu/math/people/faculty/tetali.html",
+  );
+});
+
 test("reports determinate progress while publication data streams", async ({
   page,
 }) => {
