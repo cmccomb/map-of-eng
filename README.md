@@ -1,4 +1,4 @@
-# CMU Engineering Research
+# CMU Faculty Research
 
 This repository is the single interactive visualization of the central
 [`ccm/cmu-engineering-publications`](https://huggingface.co/datasets/ccm/cmu-engineering-publications)
@@ -91,6 +91,29 @@ and artifact builder live in
 [`cmccomb/map-of-research`](https://github.com/cmccomb/map-of-research).
 The former department-specific `map-of-*` repositories are archived; their
 views are now filters here.
+
+## School coverage
+
+The client accepts the additive `catalogs.schools`, department `school_id`, and
+publication `school_ids` fields from the shared pipeline. A school selection
+matches publications associated with any faculty member in that school, so a
+joint Engineering–SCS publication appears in either view. The `schools=scs`
+or `schools=mcs` query parameter preserves the selection in a shared link.
+Older Engineering artifacts without school fields are interpreted as
+Engineering only; the school control stays hidden with one school.
+
+The first public artifact covered Engineering. The staged CMU registry adds SCS
+and MCS faculty to that roster; publication coverage will grow department by
+department, starting with Mathematical Sciences. The Hugging Face dataset ID
+retains its Engineering name for this rollout. A listed faculty member with no
+mapped works may still have publications outside the collected records. Author
+and department searches include these roster entries and show a coverage note
+when a selection has no mapped publications.
+
+When a work comes from a separately verified CMU or publisher record rather
+than a Scholar profile, its detail panel identifies that source and links the
+verification page. The source types are preserved if a future Scholar
+observation matches the same DOI.
 
 The Pages deployment stamps CSS and JavaScript URLs with the deployed commit so
 browsers cannot combine a new page with cached assets from an older release.

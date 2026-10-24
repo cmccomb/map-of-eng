@@ -405,6 +405,7 @@
     point,
     index,
     layouts,
+    schoolIds,
     departmentIds,
     facultyIds,
     keywords,
@@ -480,6 +481,11 @@
         maxLength: 5000,
       }),
       authors: optionalString(point.authors, { maxLength: 10000 }),
+      school_ids: schoolIds
+        ? knownIdArray(point.school_ids, schoolIds, `points[${index}].school_ids`, {
+            allowEmpty: false,
+          })
+        : ["engineering"],
       department_ids: knownIdArray(
         point.department_ids,
         departmentIds,
@@ -500,6 +506,17 @@
       ),
       doi: optionalString(point.doi, { maxLength: 1000 }),
       source_url: safeHttpUrl(point.source_url),
+      source_types: Array.isArray(point.source_types)
+        ? [...new Set(point.source_types.map(String))].filter((type) =>
+            ["scholar", "curated_verified"].includes(type),
+          )
+        : [],
+      source_verified_at: /^\d{4}-\d{2}-\d{2}$/.test(String(point.source_verified_at || ""))
+        ? String(point.source_verified_at)
+        : "",
+      source_verification_urls: Array.isArray(point.source_verification_urls)
+        ? [...new Set(point.source_verification_urls.map(safeHttpUrl).filter(Boolean))]
+        : [],
       keyword_ids: keywordIds,
       _title: normalizedText(point.title),
       _coordinates: coordinates,
@@ -533,6 +550,40 @@
       idField: "person_id",
       labelField: "display_name",
     });
+    const hasSchools = artifact.catalogs.schools !== undefined;
+    const schools = hasSchools
+      ? parseCatalog(artifact.catalogs.schools, {
+          name: "schools",
+          idField: "school_id",
+          labelField: "title",
+        })
+      : {
+          items: [{
+            school_id: "engineering",
+            title: "College of Engineering",
+            publication_count: artifact.points.length,
+          }],
+          ids: new Set(["engineering"]),
+        };
+    const parsedDepartments = departments.items.map((department, index) => {
+      const schoolId = hasSchools
+        ? requiredString(department.school_id, `departments[${index}].school_id`, {
+            maxLength: 200,
+          })
+        : "engineering";
+      if (!schools.ids.has(schoolId)) {
+        throw new ArtifactError(`departments[${index}].school_id is unknown`);
+      }
+      return { ...department, school_id: schoolId };
+    });
+    const parsedFaculty = faculty.items.map((person, index) => ({
+      ...person,
+      school_ids: hasSchools
+        ? knownIdArray(person.school_ids, schools.ids, `faculty[${index}].school_ids`, {
+            allowEmpty: false,
+          })
+        : ["engineering"],
+    }));
     const requireKeywords = artifact.schema_version >= 6;
     const keywords = parseKeywords(artifact.keywords, layouts, {
       required: requireKeywords,
@@ -553,6 +604,7 @@
             artifact.points[index],
             index,
             layouts,
+            hasSchools ? schools.ids : null,
             departments.ids,
             faculty.ids,
             keywords,
@@ -585,8 +637,9 @@
       default_layout_id: defaultLayoutId,
       catalogs: {
         ...artifact.catalogs,
-        departments: departments.items,
-        faculty: faculty.items,
+        schools: schools.items,
+        departments: parsedDepartments,
+        faculty: parsedFaculty,
       },
       keywords: keywords.items,
       keyword_levels: keywordLevels,
@@ -601,6 +654,7 @@
     point,
     {
       titleQueries = [],
+      schoolIds = new Set(),
       departmentIds = new Set(),
       facultyIds = new Set(),
       keywordIds = new Set(),
@@ -611,6 +665,12 @@
     if (
       titleQueries.length &&
       !titleQueries.some((query) => point._title.includes(query))
+    ) {
+      return false;
+    }
+    if (
+      schoolIds.size &&
+      !point.school_ids.some((id) => schoolIds.has(id))
     ) {
       return false;
     }
@@ -646,12 +706,14 @@
   function contextualFacetCounts(points, filters = {}) {
     const facultyCounts = new Map();
     const departmentCounts = new Map();
+    const schoolCounts = new Map();
     const keywordCounts = new Map();
     if (!Array.isArray(points)) {
-      return { facultyCounts, departmentCounts, keywordCounts };
+      return { facultyCounts, departmentCounts, schoolCounts, keywordCounts };
     }
     const withoutFaculty = { ...filters, facultyIds: new Set() };
     const withoutDepartments = { ...filters, departmentIds: new Set() };
+    const withoutSchools = { ...filters, schoolIds: new Set() };
     const withoutKeywords = { ...filters, keywordIds: new Set() };
     for (const point of points) {
       if (pointMatches(point, withoutFaculty)) {
@@ -660,11 +722,14 @@
       if (pointMatches(point, withoutDepartments)) {
         incrementFacetCounts(departmentCounts, point.department_ids);
       }
+      if (pointMatches(point, withoutSchools)) {
+        incrementFacetCounts(schoolCounts, point.school_ids);
+      }
       if (pointMatches(point, withoutKeywords)) {
         incrementFacetCounts(keywordCounts, point.keyword_ids);
       }
     }
-    return { facultyCounts, departmentCounts, keywordCounts };
+    return { facultyCounts, departmentCounts, schoolCounts, keywordCounts };
   }
 
   function stateValues(value, { normalize = false } = {}) {
@@ -696,6 +761,7 @@
     const params = new URLSearchParams();
     const collections = [
       ["q", stateValues(state.titleQueries, { normalize: true })],
+      ["schools", stateValues(state.schoolIds)],
       ["d", stateValues(state.departmentIds)],
       ["f", stateValues(state.facultyIds)],
       ["t", stateValues(state.keywordIds)],
@@ -729,6 +795,7 @@
     const scalar = (key) => stateValues([params.get(key)])[0] || "";
     return {
       titleQueries: values("q", { normalize: true }),
+      schoolIds: stateValues(params.getAll("schools").flatMap((value) => value.split(","))),
       departmentIds: values("d"),
       facultyIds: values("f"),
       keywordIds: values("t"),

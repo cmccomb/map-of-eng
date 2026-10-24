@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const core = require("../assets/map-core.js");
-const { makeArtifact } = require("./fixtures/artifact.js");
+const { makeArtifact, makeSchoolArtifact } = require("./fixtures/artifact.js");
 
 test("configuration parsing builds an encoded Hugging Face artifact URL", () => {
   const config = core.parseConfig({
@@ -129,6 +129,56 @@ test("artifact parser accepts additive fields and sanitizes publication links", 
   });
   assert.deepEqual(artifact.points[0].future_field, { retained: true });
   assert.equal(artifact.additive_metadata.accepted, true);
+  assert.deepEqual(artifact.catalogs.schools.map((school) => school.school_id), ["engineering"]);
+  assert.deepEqual(artifact.points[0].school_ids, ["engineering"]);
+});
+
+test("artifact parser preserves verified-work provenance without unsafe links", () => {
+  const source = makeArtifact();
+  source.points[0].source_types = ["curated_verified", "curated_verified", "unknown"];
+  source.points[0].source_verified_at = "2026-10-24";
+  source.points[0].source_verification_urls = [
+    "https://www.cmu.edu/math/people/faculty/tetali.html",
+    "javascript:alert(1)",
+  ];
+  const point = core.parseArtifact(source).points[0];
+  assert.deepEqual(point.source_types, ["curated_verified"]);
+  assert.equal(point.source_verified_at, "2026-10-24");
+  assert.deepEqual(point.source_verification_urls, [
+    "https://www.cmu.edu/math/people/faculty/tetali.html",
+  ]);
+  const legacy = core.parseArtifact(makeArtifact()).points[0];
+  assert.deepEqual(legacy.source_types, []);
+  assert.equal(legacy.source_verified_at, "");
+});
+
+test("artifact parser preserves the school hierarchy and validates school IDs", () => {
+  const parsed = core.parseArtifact(makeSchoolArtifact());
+  assert.deepEqual(parsed.catalogs.schools.map((school) => school.school_id), ["engineering", "scs"]);
+  assert.equal(parsed.catalogs.departments.at(-1).school_id, "scs");
+  assert.deepEqual(parsed.catalogs.faculty.at(-1).school_ids, ["scs"]);
+  assert.deepEqual(parsed.points.at(-2).school_ids, ["engineering", "scs"]);
+
+  const missingSchool = makeSchoolArtifact();
+  missingSchool.catalogs.schools = null;
+  assert.throws(() => core.parseArtifact(missingSchool), /schools catalog/);
+  const unknownDepartmentSchool = makeSchoolArtifact();
+  unknownDepartmentSchool.catalogs.departments[0].school_id = "unknown";
+  assert.throws(() => core.parseArtifact(unknownDepartmentSchool), /school_id is unknown/);
+  const missingDepartmentSchool = makeSchoolArtifact();
+  delete missingDepartmentSchool.catalogs.departments[0].school_id;
+  assert.throws(() => core.parseArtifact(missingDepartmentSchool), /school_id must be/);
+  const unknownFacultySchool = makeSchoolArtifact();
+  unknownFacultySchool.catalogs.faculty[0].school_ids = ["unknown"];
+  assert.throws(() => core.parseArtifact(unknownFacultySchool), /school_ids contains an unknown id/);
+  const missingFacultySchool = makeSchoolArtifact();
+  delete missingFacultySchool.catalogs.faculty[0].school_ids;
+  assert.throws(() => core.parseArtifact(missingFacultySchool), /school_ids must be an array/);
+  const invalidPointSchool = makeSchoolArtifact();
+  invalidPointSchool.points[0].school_ids = ["unknown"];
+  const partiallyParsed = core.parseArtifact(invalidPointSchool);
+  assert.equal(partiallyParsed.omitted_point_count, 1);
+  assert.match([...partiallyParsed.omission_reasons.keys()][0], /school_ids contains an unknown id/);
 });
 
 test("bad rows are omitted without allowing them to reserve a work id", () => {
@@ -518,6 +568,21 @@ test("filter matching is OR within dimensions and AND across dimensions", () => 
   );
 });
 
+test("school filters include cross-school publications and combine with departments", () => {
+  const points = core.parseArtifact(makeSchoolArtifact()).points;
+  const scs = { schoolIds: new Set(["scs"]) };
+  assert.deepEqual(points.filter((point) => core.pointMatches(point, scs)).map((point) => point.work_id), ["p9", "p10"]);
+  assert.deepEqual(points.filter((point) => core.pointMatches(point, {
+    ...scs,
+    departmentIds: new Set(["d-me"]),
+  })).map((point) => point.work_id), ["p9"]);
+  assert.equal(core.pointMatches(points[0], scs), false);
+  const counts = core.contextualFacetCounts(points, scs);
+  assert.equal(counts.schoolCounts.get("engineering"), 9);
+  assert.equal(counts.schoolCounts.get("scs"), 2);
+  assert.equal(counts.departmentCounts.get("d-csd"), 2);
+});
+
 test("contextual facet counts ignore only their own active dimension", () => {
   const points = core.parseArtifact(makeArtifact()).points;
   const counts = core.contextualFacetCounts(points, {
@@ -560,6 +625,7 @@ test("contextual facet counts ignore only their own active dimension", () => {
   assert.deepEqual(core.contextualFacetCounts(null), {
     facultyCounts: new Map(),
     departmentCounts: new Map(),
+    schoolCounts: new Map(),
     keywordCounts: new Map(),
   });
 });
@@ -579,6 +645,7 @@ test("map state helpers serialize compact stable filters and parse defensively",
   });
   assert.deepEqual(core.parseMapState(`?${serialized}`), {
     titleQueries: ["robot", "battery"],
+    schoolIds: [],
     departmentIds: ["d-me", "d-ece"],
     facultyIds: ["f-alice", "f-bob"],
     keywordIds: ["keyword-1"],
@@ -598,6 +665,8 @@ test("map state helpers serialize compact stable filters and parse defensively",
   assert.equal(invalid.yearMax, null);
   assert.equal(invalid.layoutId, "");
   assert.equal(invalid.colorMode, "year");
+  assert.deepEqual(core.parseMapState("?schools=scs,engineering&schools=scs").schoolIds, ["scs", "engineering"]);
+  assert.equal(core.serializeMapState({ schoolIds: new Set(["scs"]) }), "schools=scs");
   assert.deepEqual(core.parseMapState("x".repeat(8193)).departmentIds, []);
   assert.equal(core.serializeMapState().toString(), "");
 });

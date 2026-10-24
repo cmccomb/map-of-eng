@@ -397,6 +397,8 @@ h1 {
 
 .title-field + .topic-field,
 .topic-field + .author-field,
+.author-field + .school-field,
+.school-field + .department-field,
 .author-field + .department-field {
   margin-top: 0.72rem;
 }
@@ -470,6 +472,7 @@ select:focus {
 
 .author-field,
 .topic-field,
+.school-field,
 .department-field {
   position: relative;
 }
@@ -1365,6 +1368,10 @@ canvas.dragging {
   font-size: 0.75rem;
   font-weight: 680;
   text-decoration: none;
+}
+
+.detail-link + .detail-link {
+  margin-left: 1rem;
 }
 
 .close-detail {

@@ -13,12 +13,14 @@ const state = {
   matchedPoints: [],
   drawablePoints: [],
   screenPoints: [],
+  schools: [],
   departments: [],
   faculty: [],
   keywords: [],
   keywordLabelPlan: [],
   keywordLevels: [],
   layouts: [],
+  schoolById: new Map(),
   departmentById: new Map(),
   facultyById: new Map(),
   keywordById: new Map(),
@@ -34,6 +36,7 @@ const state = {
   citationMaximumClipped: false,
   activeTitleTerms: new Map(),
   activeTopics: new Set(),
+  activeSchools: new Set(),
   activeDepartments: new Set(),
   activeFaculty: new Set(),
   yearMinimum: null,
@@ -42,6 +45,7 @@ const state = {
   actualYearMaximum: null,
   facetCounts: {
     keywordCounts: new Map(),
+    schoolCounts: new Map(),
     departmentCounts: new Map(),
     facultyCounts: new Map(),
   },
@@ -60,6 +64,7 @@ const state = {
   dragDistance: 0,
   framePending: false,
   sourceLabel: "",
+  exportFileName: "cmu-engineering-publications-filtered.csv",
   omittedPointCount: 0,
   canvasWidth: 0,
   canvasHeight: 0,
@@ -151,6 +156,7 @@ function matchedBaseRadius() {
 const titleElement = document.querySelector("#map-title");
 const statusElement = document.querySelector("#map-status");
 const retryLoadButton = document.querySelector("#retry-load");
+const datasetLink = document.querySelector(".dataset-link");
 const filterPanel = document.querySelector(".filter-panel");
 const filterControls = document.querySelector(".filter-controls");
 const legendPanel = document.querySelector(".legend-panel");
@@ -177,6 +183,10 @@ const topicSelectionNote = document.querySelector("#topic-selection-note");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
+const schoolField = document.querySelector("#school-field");
+const schoolSearch = document.querySelector("#school-search");
+const schoolSuggestions = document.querySelector("#school-suggestions");
+const selectedSchools = document.querySelector("#selected-schools");
 const departmentSearch = document.querySelector("#department-search");
 const departmentSuggestions = document.querySelector("#department-suggestions");
 const selectedDepartments = document.querySelector("#selected-departments");
@@ -202,11 +212,13 @@ const emptyCopy = document.querySelector("#empty-copy");
 const detailPanel = document.querySelector("#detail-panel");
 const detailTitle = document.querySelector("#detail-title");
 const detailMeta = document.querySelector("#detail-meta");
+const detailProvenance = document.querySelector("#detail-provenance");
 const detailAuthors = document.querySelector("#detail-authors");
 const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
 const detailKeyword = document.querySelector("#detail-keyword");
 const detailLink = document.querySelector("#detail-link");
+const detailVerificationLink = document.querySelector("#detail-verification-link");
 const closeDetail = document.querySelector("#close-detail");
 const resultsPanel = document.querySelector("#results-panel");
 const resultsSummary = document.querySelector("#results-summary");
@@ -279,6 +291,17 @@ function facultyNames(point) {
     .filter(Boolean);
 }
 
+function curatedOnly(point) {
+  return point.source_types.includes("curated_verified") &&
+    !point.source_types.includes("scholar");
+}
+
+function citationText(point) {
+  return curatedOnly(point)
+    ? "citation count unavailable"
+    : `${Number(point.citation_count || 0).toLocaleString()} citations`;
+}
+
 function departmentNames(point) {
   return point.department_ids
     .map((departmentId) => state.departmentById.get(departmentId)?.title)
@@ -312,6 +335,7 @@ function preparePoint(point) {
     department_ids: Array.isArray(point.department_ids)
       ? point.department_ids
       : [],
+    school_ids: Array.isArray(point.school_ids) ? point.school_ids : [],
     faculty_ids: Array.isArray(point.faculty_ids) ? point.faculty_ids : [],
     _coordinates: coordinates,
     _title: point._title,
@@ -817,6 +841,17 @@ function scheduleDraw() {
   }
 }
 
+function selectedRosterEntriesWithoutWorks() {
+  return {
+    faculty: [...state.activeFaculty]
+      .map((id) => state.facultyById.get(id))
+      .filter((person) => person?.publication_count === 0),
+    departments: [...state.activeDepartments]
+      .map((id) => state.departmentById.get(id))
+      .filter((department) => department?.publication_count === 0),
+  };
+}
+
 function updateStatus() {
   const total = state.points.length;
   const matched = state.matchedPoints.length;
@@ -834,9 +869,24 @@ function updateStatus() {
   statusElement.classList.toggle("warning", state.omittedPointCount > 0);
   emptyState.hidden = matched !== 0;
   if (!matched && total) {
-    emptyTitle.textContent = "No publications match this combination.";
-    emptyCopy.textContent =
-      "Try a broader title, topic, author, department, or year selection.";
+    const rosterOnly = selectedRosterEntriesWithoutWorks();
+    if (rosterOnly.faculty.length === 1 && state.activeFaculty.size === 1) {
+      emptyTitle.textContent = `${rosterOnly.faculty[0].display_name} is in the faculty roster.`;
+      emptyCopy.textContent =
+        "No publications are mapped to this faculty member yet. This reflects current source coverage.";
+    } else if (rosterOnly.departments.length === 1 && state.activeDepartments.size === 1 && !state.activeFaculty.size) {
+      emptyTitle.textContent = `${rosterOnly.departments[0].title} is in the department roster.`;
+      emptyCopy.textContent =
+        "No publications are mapped to this department yet. This reflects current source coverage.";
+    } else if (rosterOnly.faculty.length || rosterOnly.departments.length) {
+      emptyTitle.textContent = "No mapped publications for this selection.";
+      emptyCopy.textContent =
+        "Some selected roster entries have no mapped works yet. This reflects current source coverage.";
+    } else {
+      emptyTitle.textContent = "No publications match this combination.";
+      emptyCopy.textContent =
+        "Try a broader title, topic, author, school, department, or year selection.";
+    }
   } else if (!total) {
     emptyTitle.textContent = "No publications are available yet.";
     emptyCopy.textContent = "The data source loaded successfully but is empty.";
@@ -1089,11 +1139,7 @@ function renderLegend() {
         themeColor("--canvas-unassigned", "#657789"),
       );
     } else {
-      appendLegendItem(
-        "No faculty matches",
-        themeColor("--canvas-unassigned", "#657789"),
-      );
-      legendSummary.textContent = "No faculty represented";
+      legendSummary.textContent = "No matching publications";
     }
   } else if (state.colorMode === "title") {
     const activeTerms = [...state.activeTitleTerms]
@@ -1123,14 +1169,14 @@ function renderLegend() {
     if (items.length) {
       appendColorKeyItems(items, "department");
     } else {
-      appendLegendItem(
-        "No department matches",
-        themeColor("--canvas-unassigned", "#657789"),
-      );
-      legendSummary.textContent = "No departments represented";
+      legendSummary.textContent = "No matching publications";
     }
   }
-  if (state.filtersActive && state.displayMode === "highlight") {
+  if (
+    state.filtersActive &&
+    state.displayMode === "highlight" &&
+    state.drawablePoints.length > state.matchedPoints.length
+  ) {
     appendLegendItem(
       "Context",
       themeColor("--canvas-context", "#748696"),
@@ -1214,19 +1260,23 @@ function renderResults() {
     ).length;
     appendResultMetric(overlap.toLocaleString(), "match every selected entity");
   } else {
+    const knownCitationPoints = matched.filter((point) => !curatedOnly(point));
     appendResultMetric(
-      matched
+      knownCitationPoints
         .reduce(
           (total, point) => total + (Number(point.citation_count) || 0),
           0,
         )
         .toLocaleString(),
-      "citations across matches",
+      knownCitationPoints.length === matched.length
+        ? "citations across matches"
+        : `known citations across matches; ${matched.length - knownCitationPoints.length} without counts`,
     );
   }
 
   const topicCounts = new Map();
   for (const point of matched) {
+    if (curatedOnly(point)) continue;
     for (const keywordId of point.keyword_ids) {
       if (state.keywordById.get(keywordId)?.level !== 1) continue;
       topicCounts.set(keywordId, (topicCounts.get(keywordId) || 0) + 1);
@@ -1254,7 +1304,9 @@ function renderResults() {
     });
   if (!resultsTopics.childElementCount) {
     const item = document.createElement("li");
-    item.textContent = "No detailed topic metadata available";
+    item.textContent = matched.some(curatedOnly)
+      ? "Automated topics not reviewed for verified records"
+      : "No detailed topic metadata available";
     resultsTopics.append(item);
   }
 
@@ -1270,9 +1322,7 @@ function renderResults() {
     const meta = document.createElement("span");
     const year = point.year || "Year unavailable";
     const faculty = facultyNames(point).join(", ") || point.authors;
-    meta.textContent = `${year} · ${faculty || "Authors unavailable"} · ${Number(
-      point.citation_count || 0,
-    ).toLocaleString()} citations`;
+    meta.textContent = `${year} · ${faculty || "Authors unavailable"} · ${citationText(point)}`;
     button.append(title, meta);
     item.append(button);
     resultsList.append(item);
@@ -1346,7 +1396,7 @@ function exportResultsCsv() {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = "cmu-engineering-publications-filtered.csv";
+  link.download = state.exportFileName;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -1354,6 +1404,7 @@ function exportResultsCsv() {
 function serializedUiState() {
   return core.serializeMapState({
     titleQueries: [...state.activeTitleTerms.keys()],
+    schoolIds: state.activeSchools,
     departmentIds: state.activeDepartments,
     facultyIds: state.activeFaculty,
     keywordIds: state.activeTopics,
@@ -1414,6 +1465,9 @@ function restoreUrlState(search = window.location.search) {
     state.activeTitleTerms.set(query, query);
     ensureTitleColor(query);
   }
+  parsed.schoolIds
+    .filter((id) => state.schoolById.has(id))
+    .forEach((id) => state.activeSchools.add(id));
   parsed.departmentIds
     .filter((id) => state.departmentById.has(id))
     .forEach((id) => state.activeDepartments.add(id));
@@ -1484,6 +1538,7 @@ function restoreUrlState(search = window.location.search) {
   renderSelectedTitles();
   topicFilter.renderSelected();
   authorFilter.renderSelected();
+  schoolFilter.renderSelected();
   departmentFilter.renderSelected();
   applyFilters({ syncUrl: false });
   state.restoringUrlState = false;
@@ -1492,6 +1547,7 @@ function restoreUrlState(search = window.location.search) {
 function currentFilterOptions() {
   return {
     titleQueries: [...state.activeTitleTerms.keys()],
+    schoolIds: state.activeSchools,
     departmentIds: state.activeDepartments,
     facultyIds: state.activeFaculty,
     keywordIds: state.activeTopics,
@@ -1534,6 +1590,7 @@ function applyFilters({ syncUrl = true } = {}) {
   state.filtersActive = Boolean(
     state.activeTitleTerms.size ||
     state.activeTopics.size ||
+    state.activeSchools.size ||
     state.activeDepartments.size ||
     state.activeFaculty.size ||
     Number.isFinite(state.yearMinimum) ||
@@ -1548,13 +1605,17 @@ function applyFilters({ syncUrl = true } = {}) {
   for (const point of state.points) {
     point._matched = matchedIds.has(point.work_id);
   }
+  const rosterOnly = selectedRosterEntriesWithoutWorks();
   state.drawablePoints =
-    state.filtersActive && state.displayMode === "show"
+    state.filtersActive &&
+    (state.displayMode === "show" ||
+      (state.matchedPoints.length === 0 &&
+        (rosterOnly.faculty.length || rosterOnly.departments.length)))
       ? state.matchedPoints
       : state.points;
   if (
     state.selectedWorkId &&
-    state.displayMode === "show" &&
+    (state.displayMode === "show" || state.drawablePoints.length === 0) &&
     !matchedIds.has(state.selectedWorkId)
   ) {
     detailPanel.hidden = true;
@@ -1567,6 +1628,7 @@ function applyFilters({ syncUrl = true } = {}) {
   refreshKeywordLabelPlan();
   updateTopicSelectionNote();
   authorFilter.refresh();
+  schoolFilter.refresh();
   departmentFilter.refresh();
   topicFilter.refresh();
   if (!resultsPanel.hidden) renderResults();
@@ -1741,7 +1803,12 @@ function createMultiSelect({
       const name = document.createElement("span");
       name.textContent = itemLabel(item);
       const count = document.createElement("small");
-      count.textContent = `${Number(itemCount(item) || 0).toLocaleString()} works`;
+      const workCount = Number(itemCount(item) || 0);
+      count.textContent = workCount
+        ? `${workCount.toLocaleString()} works`
+        : Number(item.publication_count) === 0
+          ? "0 mapped works"
+          : "0 matching works";
       button.append(name, count);
       listItem.append(button);
       suggestionsList.append(listItem);
@@ -1929,11 +1996,26 @@ const authorFilter = createMultiSelect({
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
   itemCount: (person) =>
-    state.facetCounts.facultyCounts.get(person.person_id) ??
-    person.publication_count,
-  itemAvailable: (person) =>
-    (state.facetCounts.facultyCounts.get(person.person_id) ??
-      person.publication_count) > 0,
+    state.facetCounts.facultyCounts.get(person.person_id) || 0,
+});
+
+const schoolFilter = createMultiSelect({
+  input: schoolSearch,
+  suggestionsList: schoolSuggestions,
+  selectedList: selectedSchools,
+  optionPrefix: "school",
+  items: () => state.schools,
+  activeIds: state.activeSchools,
+  itemId: (school) => school.school_id,
+  itemLabel: (school) => school.title,
+  itemCount: (school) =>
+    state.facetCounts.schoolCounts.get(school.school_id) ??
+    school.publication_count,
+  itemAvailable: (school) =>
+    (state.facetCounts.schoolCounts.get(school.school_id) ??
+      school.publication_count) > 0,
+  showAllOnEmpty: true,
+  suggestionLimit: Number.POSITIVE_INFINITY,
 });
 
 const departmentFilter = createMultiSelect({
@@ -1946,11 +2028,7 @@ const departmentFilter = createMultiSelect({
   itemId: (department) => department.department_id,
   itemLabel: (department) => department.title,
   itemCount: (department) =>
-    state.facetCounts.departmentCounts.get(department.department_id) ??
-    department.publication_count,
-  itemAvailable: (department) =>
-    (state.facetCounts.departmentCounts.get(department.department_id) ??
-      department.publication_count) > 0,
+    state.facetCounts.departmentCounts.get(department.department_id) || 0,
   showAllOnEmpty: true,
   suggestionLimit: Number.POSITIVE_INFINITY,
 });
@@ -2053,7 +2131,7 @@ function showTooltip(event) {
   const details = document.createElement("span");
   const faculty = facultyNames(point).join(", ") || "CMU faculty unavailable";
   const year = point.year ? ` · ${point.year}` : "";
-  details.textContent = `${faculty}${year} · ${Number(point.citation_count || 0).toLocaleString()} citations`;
+  details.textContent = `${faculty}${year} · ${citationText(point)}`;
   tooltip.append(heading, details);
   const bounds = canvas.getBoundingClientRect();
   const tooltipWidth = Math.min(368, bounds.width - 32);
@@ -2068,14 +2146,20 @@ function showDetails(point) {
   detailTitle.textContent = point.title;
   const year = point.year || "Year unavailable";
   const venue = point.venue || "Venue unavailable";
-  const citations = Number(point.citation_count || 0).toLocaleString();
   const observations = Number(point.observation_count || 1).toLocaleString();
-  detailMeta.textContent = `${year} · ${venue} · ${citations} citations · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
+  const curated = point.source_types.includes("curated_verified");
+  const scholar = point.source_types.includes("scholar");
+  detailMeta.textContent = `${year} · ${venue} · ${citationText(point)} · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
+  detailProvenance.hidden = !point.source_types.length;
+  detailProvenance.textContent = curated
+    ? `${scholar ? "Google Scholar and " : ""}verified CMU/publisher record${scholar ? "" : " · not collected from Google Scholar"}${point.source_verified_at ? ` · checked ${point.source_verified_at}` : ""}`
+    : "Google Scholar profile record";
   detailAuthors.textContent = point.authors || "Author list unavailable";
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
-  detailKeyword.textContent =
-    point.keyword_ids
+  detailKeyword.textContent = curated && !scholar
+    ? "Automated topic not reviewed for this verified record"
+    : point.keyword_ids
       .map((keywordId) => state.keywordById.get(keywordId)?.label)
       .filter(Boolean)
       .join(" › ") || "Unavailable";
@@ -2088,6 +2172,16 @@ function showDetails(point) {
   } else {
     detailLink.removeAttribute("href");
     detailLink.hidden = true;
+  }
+  const separateVerificationUrl = point.source_verification_urls.find(
+    (url) => url !== point.source_url,
+  );
+  if (curated && separateVerificationUrl) {
+    detailVerificationLink.href = separateVerificationUrl;
+    detailVerificationLink.hidden = false;
+  } else {
+    detailVerificationLink.removeAttribute("href");
+    detailVerificationLink.hidden = true;
   }
   detailPanel.hidden = false;
   scheduleDraw();
@@ -2687,6 +2781,7 @@ function resetFilters() {
   topicSearch.value = "";
   state.activeTitleTerms.clear();
   state.activeTopics.clear();
+  state.activeSchools.clear();
   state.activeDepartments.clear();
   state.activeFaculty.clear();
   state.yearMinimum = null;
@@ -2698,6 +2793,7 @@ function resetFilters() {
   renderSelectedTitles();
   topicFilter.renderSelected();
   authorFilter.renderSelected();
+  schoolFilter.renderSelected();
   departmentFilter.renderSelected();
   updateTopicSelectionNote();
 }
@@ -2713,6 +2809,14 @@ async function loadMap() {
     );
     if (config.heading) titleElement.textContent = config.heading;
     document.title = `${config.title} Map`;
+    if (config.dataset_id) {
+      datasetLink.href = `https://huggingface.co/datasets/${config.dataset_id}`;
+      datasetLink.setAttribute(
+        "aria-label",
+        `Open the full ${config.title} publication dataset`,
+      );
+      state.exportFileName = `${config.dataset_id.split("/")[1]}-filtered.csv`;
+    }
     const artifactDocument = await fetchJson(
       core.artifactUrl(config),
       "Publication artifact",
@@ -2725,6 +2829,7 @@ async function loadMap() {
     );
     const artifact = core.parseArtifact(artifactDocument);
 
+    state.schools = artifact.catalogs.schools;
     state.departments = artifact.catalogs.departments;
     state.faculty = artifact.catalogs.faculty;
     state.keywords = artifact.keywords.map(prepareKeyword);
@@ -2736,6 +2841,10 @@ async function loadMap() {
     state.layoutId = state.layoutById.has(config.default_layout_id)
       ? config.default_layout_id
       : artifact.default_layout_id;
+    state.schoolById = new Map(
+      state.schools.map((item) => [item.school_id, item]),
+    );
+    schoolField.hidden = state.schools.length <= 1;
     state.departmentById = new Map(
       state.departments.map((item) => [item.department_id, item]),
     );
@@ -2760,6 +2869,7 @@ async function loadMap() {
     state.citationMaximumClipped = false;
     state.facetCounts = {
       keywordCounts: new Map(),
+      schoolCounts: new Map(),
       departmentCounts: new Map(),
       facultyCounts: new Map(),
     };
@@ -2777,8 +2887,8 @@ async function loadMap() {
     initializeSequentialColors();
     const updated = core.formatUtcDate(artifact.source_data_newest_at_utc);
     state.sourceLabel = updated
-      ? `newest Scholar profile refresh ${updated}`
-      : "no verified Scholar profile refresh date";
+      ? `newest Scholar profile refresh in full corpus ${updated}`
+      : "no verified Scholar profile refresh date in full corpus";
     restoreUrlState();
     resizeCanvas();
     resetView();

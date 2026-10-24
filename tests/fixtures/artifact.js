@@ -143,6 +143,56 @@ function makeArtifact() {
   };
 }
 
+function makeSchoolArtifact() {
+  const artifact = makeArtifact();
+  artifact.schema_version = 7;
+  artifact.catalogs.schools = [
+    { school_id: "engineering", title: "College of Engineering", publication_count: 9 },
+    { school_id: "scs", title: "School of Computer Science", publication_count: 2 },
+  ];
+  artifact.catalogs.departments = artifact.catalogs.departments.map((item) => ({
+    ...item,
+    school_id: "engineering",
+  }));
+  artifact.catalogs.departments.push({
+    department_id: "d-csd",
+    title: "Computer Science Department",
+    school_id: "scs",
+    publication_count: 2,
+  });
+  artifact.catalogs.faculty = artifact.catalogs.faculty.map((item) => ({
+    ...item,
+    school_ids: ["engineering"],
+  }));
+  artifact.catalogs.faculty.push({
+    person_id: "f-erin",
+    display_name: "Erin Ellis",
+    school_ids: ["scs"],
+    publication_count: 2,
+  });
+  for (const point of artifact.points) point.school_ids = ["engineering"];
+  artifact.points.push({
+    ...makePoint(pointRows[0], 8),
+    work_id: "p9",
+    title: "Robotic Design Collaboration",
+    authors: "Alice Adams; Erin Ellis",
+    department_ids: ["d-me", "d-csd"],
+    faculty_ids: ["f-alice", "f-erin"],
+    school_ids: ["engineering", "scs"],
+  });
+  artifact.points.push({
+    ...makePoint(pointRows[0], 9),
+    work_id: "p10",
+    title: "Computer Science Research",
+    authors: "Erin Ellis",
+    department_ids: ["d-csd"],
+    faculty_ids: ["f-erin"],
+    school_ids: ["scs"],
+  });
+  artifact.point_count = artifact.points.length;
+  return artifact;
+}
+
 function makeLargeArtifact(count = 32958) {
   const artifact = makeArtifact();
   artifact.points = Array.from({ length: count }, (_, index) => {
@@ -162,4 +212,4 @@ function makeLargeArtifact(count = 32958) {
   return artifact;
 }
 
-module.exports = { makeArtifact, makeLargeArtifact };
+module.exports = { makeArtifact, makeSchoolArtifact, makeLargeArtifact };
