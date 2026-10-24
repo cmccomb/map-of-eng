@@ -118,7 +118,8 @@ and department searches include these roster entries and show a coverage note
 when a selection has no mapped publications.
 When a typed primary academic home is available, faculty search labels it as a
 department, institute, constituent school, academic area, or school and marks
-inferred choices. Heinz and Tepper school homes appear by their school names,
+inferred choices. A school fallback says when no narrower unit was verified.
+Heinz and Tepper school homes appear by their school names,
 not by the technical faculty-roster container names. Other included
 memberships remain visible and continue to match filters. A typed `unresolved`
 home with a blank ID remains unresolved. Older artifacts with only the legacy

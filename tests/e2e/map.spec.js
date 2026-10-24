@@ -258,11 +258,11 @@ test("faculty search labels school, institute, and campus-approved homes without
     { school_id: "tepper", title: "Tepper School of Business", publication_count: 1 },
   );
   artifact.catalogs.departments.push(
-    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz College faculty (shared roster container)", publication_count: 0 },
-    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper School of Business faculty", publication_count: 0 },
-    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", publication_count: 0 },
-    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", publication_count: 0 },
-    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", publication_count: 0 },
+    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz College faculty (shared roster container)", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper School of Business faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", unit_type: "constituent_school", publication_count: 0 },
+    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", unit_type: "institute", publication_count: 0 },
+    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", unit_type: "department", publication_count: 0 },
   );
   const [tepper, pedro, institute, africa, unresolved] = artifact.catalogs.faculty;
   const home = (person, type, id, title, schoolId) => Object.assign(person, {
@@ -278,6 +278,7 @@ test("faculty search labels school, institute, and campus-approved homes without
   tepper.memberships = [{ department_id: "tepper-faculty", role: "faculty" }];
   tepper.school_ids = ["tepper"];
   home(tepper, "school", "tepper", "Tepper School of Business", "tepper");
+  tepper.primary_academic_home_basis = "school_fallback";
   pedro.display_name = "Pedro Ferreira";
   pedro.memberships = [
     { department_id: "heinz-faculty", role: "faculty" },
@@ -317,7 +318,7 @@ test("faculty search labels school, institute, and campus-approved homes without
 
   const search = page.locator("#author-search");
   for (const [name, expected] of [
-    ["Alice", "Primary school: Tepper School of Business"],
+    ["Alice", "Primary school: Tepper School of Business (no narrower unit verified)"],
     ["Pedro", "Primary school: Heinz College · Also: Mechanical Engineering"],
     ["Carol", "Primary institute: Human-Computer Interaction Institute"],
     ["Dan", "Primary department: CMU-Africa"],

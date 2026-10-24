@@ -227,11 +227,11 @@ test("typed primary homes validate their school and included role without changi
     { school_id: "heinz", title: "Heinz College", publication_count: 0 },
   );
   source.catalogs.departments.push(
-    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper faculty", publication_count: 0 },
-    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz faculty", publication_count: 0 },
-    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", publication_count: 0 },
-    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", publication_count: 0 },
-    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", publication_count: 0 },
+    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", unit_type: "constituent_school", publication_count: 0 },
+    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", unit_type: "institute", publication_count: 0 },
+    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", unit_type: "department", publication_count: 0 },
   );
   const person = source.catalogs.faculty[0];
   person.memberships = [{ department_id: "tepper-faculty", role: "faculty" }];
@@ -332,6 +332,9 @@ test("typed primary homes validate their school and included role without changi
   falseDepartment.catalogs.faculty[0].primary_academic_home_type = "department";
   falseDepartment.catalogs.faculty[0].primary_academic_home_id = "tepper-faculty";
   assert.throws(() => core.parseArtifact(falseDepartment), /outside included memberships/);
+  const falseInstitute = structuredClone(institute);
+  falseInstitute.catalogs.faculty[0].primary_academic_home_type = "department";
+  assert.throws(() => core.parseArtifact(falseInstitute), /outside included memberships/);
 });
 
 test("bad rows are omitted without allowing them to reserve a work id", () => {

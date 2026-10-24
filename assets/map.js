@@ -311,6 +311,11 @@ function departmentNames(point) {
     .filter(Boolean);
 }
 
+function isRosterContainer(department) {
+  return department?.unit_type === "roster_container" ||
+    ["heinz-faculty", "tepper-faculty"].includes(department?.department_id);
+}
+
 function facultyPrimaryHome(person) {
   if (Object.hasOwn(person, "primary_academic_home_type")) {
     return person.primary_academic_home_type &&
@@ -326,7 +331,7 @@ function facultyPrimaryHome(person) {
   }
   const department = state.departmentById.get(person.primary_department_id);
   if (!department) return null;
-  if (["heinz-faculty", "tepper-faculty"].includes(department.department_id)) {
+  if (isRosterContainer(department)) {
     return {
       type: "school",
       id: department.school_id,
@@ -364,6 +369,8 @@ function facultyPrimaryDetail(person) {
     ? " (inferred from PhD students)"
     : basis === "inferred_profile_title"
       ? " (inferred from faculty title)"
+      : basis === "school_fallback"
+        ? " (no narrower unit verified)"
       : "";
   const otherHomes = Array.isArray(person.memberships)
     ? [
@@ -377,11 +384,12 @@ function facultyPrimaryDetail(person) {
               (departmentId) =>
                 departmentId && departmentId !== home.id &&
                 !(home.type === "school" &&
-                  departmentId === `${home.schoolId}-faculty`),
+                  isRosterContainer(state.departmentById.get(departmentId)) &&
+                  state.departmentById.get(departmentId).school_id === home.schoolId),
             )
             .map((departmentId) => {
               const department = state.departmentById.get(departmentId);
-              return ["heinz-faculty", "tepper-faculty"].includes(departmentId)
+              return isRosterContainer(department)
                 ? state.schoolById.get(department?.school_id)?.title
                 : department?.title;
             })

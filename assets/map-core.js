@@ -586,7 +586,8 @@
       return {
         ...department,
         school_id: schoolId,
-        title: ROSTER_CONTAINER_IDS.has(department.department_id)
+        title: department.unit_type === "roster_container" ||
+          ROSTER_CONTAINER_IDS.has(department.department_id)
           ? schoolTitle
           : department.title,
       };
@@ -668,12 +669,19 @@
             ) {
               throw new ArtifactError(`faculty[${index}] has an invalid primary academic home`);
             }
-            if (![...includedMembershipIds].some((id) =>
-              departmentById.get(id)?.school_id === homeSchoolId)) {
+            if (![...includedMembershipIds].some((id) => {
+              const unit = departmentById.get(id);
+              return unit?.school_id === homeSchoolId &&
+                (unit.unit_type === "roster_container" ||
+                  ROSTER_CONTAINER_IDS.has(id));
+            })) {
               throw new ArtifactError(`faculty[${index}] has a primary academic home outside included memberships`);
             }
           } else if (
+            departmentById.get(homeId)?.unit_type === "roster_container" ||
             ROSTER_CONTAINER_IDS.has(homeId) ||
+            (departmentById.get(homeId)?.unit_type &&
+              departmentById.get(homeId).unit_type !== homeType) ||
             departmentById.get(homeId)?.school_id !== homeSchoolId ||
             !includedMembershipIds.has(homeId)
           ) {
