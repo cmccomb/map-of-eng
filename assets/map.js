@@ -313,7 +313,8 @@ function departmentNames(point) {
 
 function facultyPrimaryHome(person) {
   if (Object.hasOwn(person, "primary_academic_home_type")) {
-    return person.primary_academic_home_type
+    return person.primary_academic_home_type &&
+      person.primary_academic_home_type !== "unresolved"
       ? {
           type: person.primary_academic_home_type,
           id: person.primary_academic_home_id,

@@ -219,7 +219,7 @@ test("faculty search shows the supported primary and retains secondary departmen
   ];
   artifact.catalogs.faculty[1].primary_department_id = "";
   artifact.catalogs.faculty[1].primary_department_basis = "unresolved";
-  artifact.catalogs.faculty[1].primary_academic_home_type = "";
+  artifact.catalogs.faculty[1].primary_academic_home_type = "unresolved";
   artifact.catalogs.faculty[1].primary_academic_home_basis = "unresolved";
   artifact.points[0].department_ids = ["d-me", "d-bme"];
   await openMap(page, artifact);
@@ -294,7 +294,7 @@ test("faculty search labels school, institute, and campus-approved homes without
     { department_id: "hcii", role: "faculty" },
     { department_id: "d-csd", role: "faculty" },
   ];
-  unresolved.primary_academic_home_type = "";
+  unresolved.primary_academic_home_type = "unresolved";
   unresolved.primary_academic_home_basis = "unresolved";
   const constituent = {
     person_id: "f-constituent",

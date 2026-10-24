@@ -309,7 +309,7 @@ test("typed primary homes validate their school and included role without changi
 
   const unresolved = structuredClone(source);
   Object.assign(unresolved.catalogs.faculty[0], {
-    primary_academic_home_type: "",
+    primary_academic_home_type: "unresolved",
     primary_academic_home_id: "",
     primary_academic_home_title: "",
     primary_academic_home_school_id: "",
@@ -317,7 +317,7 @@ test("typed primary homes validate their school and included role without changi
     primary_academic_home_verified_at: "",
     primary_academic_home_basis: "unresolved",
   });
-  assert.equal(core.parseArtifact(unresolved).catalogs.faculty[0].primary_academic_home_type, "");
+  assert.equal(core.parseArtifact(unresolved).catalogs.faculty[0].primary_academic_home_type, "unresolved");
 
   const wrongSchool = structuredClone(source);
   wrongSchool.catalogs.faculty[0].primary_academic_home_school_id = "heinz";

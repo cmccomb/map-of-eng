@@ -639,7 +639,7 @@
         maxLength: 100,
       });
       if (hasTypedHome) {
-        if (homeType) {
+        if (homeType && homeType !== "unresolved") {
           if (!PRIMARY_HOME_TYPES.has(homeType)) {
             throw new ArtifactError(`faculty[${index}].primary_academic_home_type is unknown`);
           }
@@ -684,7 +684,8 @@
           }
         } else if (
           homeId || homeTitle || homeSchoolId || homeSourceUrl || homeVerifiedAt ||
-          (homeBasis && homeBasis !== "unresolved") || primaryDepartmentId
+          (homeBasis && homeBasis !== "unresolved") || primaryDepartmentId ||
+          (homeType === "unresolved" && homeBasis !== "unresolved")
         ) {
           throw new ArtifactError(`faculty[${index}] has an incomplete unresolved primary academic home`);
         }
