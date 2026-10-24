@@ -101,6 +101,49 @@ test("school selection includes joint publications and persists in the view URL"
   await expectPublicationStatus(page, "1 of 10 publications match");
 });
 
+test("college colors include joint work and the color key selects its school", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.points = artifact.points.filter((point) => point.work_id !== "p10");
+  artifact.point_count = artifact.points.length;
+  artifact.catalogs.schools.find((school) => school.school_id === "scs").publication_count = 1;
+  artifact.catalogs.departments.find((department) => department.department_id === "d-csd").publication_count = 1;
+  artifact.catalogs.faculty.find((person) => person.person_id === "f-erin").publication_count = 1;
+  await openMap(page, artifact);
+
+  await page.locator(".color-control").getByText("College", { exact: true }).click();
+  await expect(page.locator('input[name="color-mode"][value="school"]')).toBeChecked();
+  await expect(page).toHaveURL(/color=school/);
+
+  const legend = page.locator("#map-legend");
+  const engineering = legend.getByRole("button", { name: /College of Engineering/ });
+  const scs = legend.getByRole("button", { name: /School of Computer Science/ });
+  await expect(legend.locator(".color-key-item")).toHaveCount(2);
+  await expect(engineering.locator("small")).toHaveText("8 matches");
+  await expect(scs.locator("small")).toHaveText("1 match");
+  const schoolColors = await legend.locator(".color-key-item > i").evaluateAll((swatches) =>
+    swatches.map((swatch) => getComputedStyle(swatch).backgroundColor),
+  );
+  expect(new Set(schoolColors).size).toBe(2);
+
+  // The only SCS work is jointly affiliated with Engineering. It must already
+  // use the SCS color before selecting SCS in the key.
+  await addTitleTerm(page, "Robotic Design Collaboration");
+  await expectPublicationStatus(page, "1 of 9 publications match");
+  await expect(legend.locator(".color-key-item")).toHaveCount(1);
+  await expect(scs.locator("small")).toHaveText("1 match");
+
+  await scs.click();
+  await expect(page.locator("#selected-schools")).toContainText("School of Computer Science");
+  await expect(scs).toHaveAttribute("aria-pressed", "true");
+  await expectPublicationStatus(page, "1 of 9 publications match");
+  await expect(page).toHaveURL(/schools=scs/);
+
+  await page.reload();
+  await expect(page.locator('input[name="color-mode"][value="school"]')).toBeChecked();
+  await expect(page.locator("#selected-schools")).toContainText("School of Computer Science");
+  await expectPublicationStatus(page, "1 of 9 publications match");
+});
+
 test("zero-work faculty and departments remain selectable with clear coverage states", async ({ page }) => {
   const artifact = makeSchoolArtifact();
   artifact.catalogs.schools.push({
