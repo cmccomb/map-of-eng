@@ -106,7 +106,9 @@ The first public artifact covered Engineering. The staged CMU registry adds SCS
 and MCS faculty to that roster; publication coverage will grow department by
 department, starting with Mathematical Sciences. The Hugging Face dataset ID
 retains its Engineering name for this rollout. A listed faculty member with no
-mapped works may still have publications outside the collected records.
+mapped works may still have publications outside the collected records. Author
+and department searches include these roster entries and show a coverage note
+when a selection has no mapped publications.
 
 When a work comes from a separately verified CMU or publisher record rather
 than a Scholar profile, its detail panel identifies that source and links the

@@ -841,6 +841,17 @@ function scheduleDraw() {
   }
 }
 
+function selectedRosterEntriesWithoutWorks() {
+  return {
+    faculty: [...state.activeFaculty]
+      .map((id) => state.facultyById.get(id))
+      .filter((person) => person?.publication_count === 0),
+    departments: [...state.activeDepartments]
+      .map((id) => state.departmentById.get(id))
+      .filter((department) => department?.publication_count === 0),
+  };
+}
+
 function updateStatus() {
   const total = state.points.length;
   const matched = state.matchedPoints.length;
@@ -858,9 +869,24 @@ function updateStatus() {
   statusElement.classList.toggle("warning", state.omittedPointCount > 0);
   emptyState.hidden = matched !== 0;
   if (!matched && total) {
-    emptyTitle.textContent = "No publications match this combination.";
-    emptyCopy.textContent =
-      "Try a broader title, topic, author, school, department, or year selection.";
+    const rosterOnly = selectedRosterEntriesWithoutWorks();
+    if (rosterOnly.faculty.length === 1 && state.activeFaculty.size === 1) {
+      emptyTitle.textContent = `${rosterOnly.faculty[0].display_name} is in the faculty roster.`;
+      emptyCopy.textContent =
+        "No publications are mapped to this faculty member yet. This reflects current source coverage.";
+    } else if (rosterOnly.departments.length === 1 && state.activeDepartments.size === 1 && !state.activeFaculty.size) {
+      emptyTitle.textContent = `${rosterOnly.departments[0].title} is in the department roster.`;
+      emptyCopy.textContent =
+        "No publications are mapped to this department yet. This reflects current source coverage.";
+    } else if (rosterOnly.faculty.length || rosterOnly.departments.length) {
+      emptyTitle.textContent = "No mapped publications for this selection.";
+      emptyCopy.textContent =
+        "Some selected roster entries have no mapped works yet. This reflects current source coverage.";
+    } else {
+      emptyTitle.textContent = "No publications match this combination.";
+      emptyCopy.textContent =
+        "Try a broader title, topic, author, school, department, or year selection.";
+    }
   } else if (!total) {
     emptyTitle.textContent = "No publications are available yet.";
     emptyCopy.textContent = "The data source loaded successfully but is empty.";
@@ -1113,11 +1139,7 @@ function renderLegend() {
         themeColor("--canvas-unassigned", "#657789"),
       );
     } else {
-      appendLegendItem(
-        "No faculty matches",
-        themeColor("--canvas-unassigned", "#657789"),
-      );
-      legendSummary.textContent = "No faculty represented";
+      legendSummary.textContent = "No matching publications";
     }
   } else if (state.colorMode === "title") {
     const activeTerms = [...state.activeTitleTerms]
@@ -1147,14 +1169,14 @@ function renderLegend() {
     if (items.length) {
       appendColorKeyItems(items, "department");
     } else {
-      appendLegendItem(
-        "No department matches",
-        themeColor("--canvas-unassigned", "#657789"),
-      );
-      legendSummary.textContent = "No departments represented";
+      legendSummary.textContent = "No matching publications";
     }
   }
-  if (state.filtersActive && state.displayMode === "highlight") {
+  if (
+    state.filtersActive &&
+    state.displayMode === "highlight" &&
+    state.drawablePoints.length > state.matchedPoints.length
+  ) {
     appendLegendItem(
       "Context",
       themeColor("--canvas-context", "#748696"),
@@ -1583,13 +1605,17 @@ function applyFilters({ syncUrl = true } = {}) {
   for (const point of state.points) {
     point._matched = matchedIds.has(point.work_id);
   }
+  const rosterOnly = selectedRosterEntriesWithoutWorks();
   state.drawablePoints =
-    state.filtersActive && state.displayMode === "show"
+    state.filtersActive &&
+    (state.displayMode === "show" ||
+      (state.matchedPoints.length === 0 &&
+        (rosterOnly.faculty.length || rosterOnly.departments.length)))
       ? state.matchedPoints
       : state.points;
   if (
     state.selectedWorkId &&
-    state.displayMode === "show" &&
+    (state.displayMode === "show" || state.drawablePoints.length === 0) &&
     !matchedIds.has(state.selectedWorkId)
   ) {
     detailPanel.hidden = true;
@@ -1777,7 +1803,12 @@ function createMultiSelect({
       const name = document.createElement("span");
       name.textContent = itemLabel(item);
       const count = document.createElement("small");
-      count.textContent = `${Number(itemCount(item) || 0).toLocaleString()} works`;
+      const workCount = Number(itemCount(item) || 0);
+      count.textContent = workCount
+        ? `${workCount.toLocaleString()} works`
+        : Number(item.publication_count) === 0
+          ? "0 mapped works"
+          : "0 matching works";
       button.append(name, count);
       listItem.append(button);
       suggestionsList.append(listItem);
@@ -1965,11 +1996,7 @@ const authorFilter = createMultiSelect({
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
   itemCount: (person) =>
-    state.facetCounts.facultyCounts.get(person.person_id) ??
-    person.publication_count,
-  itemAvailable: (person) =>
-    (state.facetCounts.facultyCounts.get(person.person_id) ??
-      person.publication_count) > 0,
+    state.facetCounts.facultyCounts.get(person.person_id) || 0,
 });
 
 const schoolFilter = createMultiSelect({
@@ -2001,11 +2028,7 @@ const departmentFilter = createMultiSelect({
   itemId: (department) => department.department_id,
   itemLabel: (department) => department.title,
   itemCount: (department) =>
-    state.facetCounts.departmentCounts.get(department.department_id) ??
-    department.publication_count,
-  itemAvailable: (department) =>
-    (state.facetCounts.departmentCounts.get(department.department_id) ??
-      department.publication_count) > 0,
+    state.facetCounts.departmentCounts.get(department.department_id) || 0,
   showAllOnEmpty: true,
   suggestionLimit: Number.POSITIVE_INFINITY,
 });

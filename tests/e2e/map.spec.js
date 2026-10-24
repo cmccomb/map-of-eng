@@ -101,6 +101,58 @@ test("school selection includes joint publications and persists in the view URL"
   await expectPublicationStatus(page, "1 of 10 publications match");
 });
 
+test("zero-work faculty and departments remain selectable with clear coverage states", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.catalogs.schools.push({
+    school_id: "mcs",
+    title: "Mellon College of Science",
+    publication_count: 0,
+  });
+  artifact.catalogs.departments.push({
+    department_id: "math",
+    title: "Mathematical Sciences",
+    school_id: "mcs",
+    publication_count: 0,
+  });
+  artifact.catalogs.faculty.push({
+    person_id: "f-nora",
+    display_name: "Nora Newton",
+    school_ids: ["mcs"],
+    publication_count: 0,
+  });
+  await openMap(page, artifact);
+
+  const departmentSearch = page.locator("#department-search");
+  await departmentSearch.focus();
+  await expect(page.locator("#department-suggestions button")).toHaveCount(5);
+  await departmentSearch.press("Escape");
+
+  const authorSearch = page.locator("#author-search");
+  await authorSearch.fill("Nora Newton");
+  await expect(page.locator("#author-suggestions")).toContainText("0 mapped works");
+  await authorSearch.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText("Nora Newton");
+  await expectPublicationStatus(page, "0 of 10 publications match");
+  await expect(page.locator("#empty-title")).toHaveText("Nora Newton is in the faculty roster.");
+  await expect(page.locator("#empty-copy")).toContainText("No publications are mapped to this faculty member yet");
+  await expect(page.locator("#legend-summary")).toHaveText("No matching publications");
+
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const emptyCanvas = await page.locator("#research-map").evaluate((canvas) => canvas.toDataURL());
+  await page.getByText("Show matches only", { exact: true }).click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await page.locator("#research-map").evaluate((canvas) => canvas.toDataURL())).toBe(emptyCanvas);
+
+  await page.locator("#clear-filters").click();
+  await expect(page.locator("#empty-state")).toBeHidden();
+  await departmentSearch.fill("Mathematical Sciences");
+  await expect(page.locator("#department-suggestions")).toContainText("0 mapped works");
+  await departmentSearch.press("Enter");
+  await expect(page.locator("#selected-departments")).toContainText("Mathematical Sciences");
+  await expect(page.locator("#empty-title")).toHaveText("Mathematical Sciences is in the department roster.");
+  await expect(page.locator("#empty-copy")).toContainText("No publications are mapped to this department yet");
+});
+
 test("publication details disclose a separately verified record", async ({ page }) => {
   const artifact = makeArtifact();
   for (const point of artifact.points) {
