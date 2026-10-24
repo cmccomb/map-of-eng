@@ -576,14 +576,38 @@
       }
       return { ...department, school_id: schoolId };
     });
-    const parsedFaculty = faculty.items.map((person, index) => ({
-      ...person,
-      school_ids: hasSchools
-        ? knownIdArray(person.school_ids, schools.ids, `faculty[${index}].school_ids`, {
-            allowEmpty: false,
-          })
-        : ["engineering"],
-    }));
+    const parsedFaculty = faculty.items.map((person, index) => {
+      const primaryDepartmentId = optionalString(person.primary_department_id, {
+        maxLength: 200,
+      });
+      if (primaryDepartmentId) {
+        if (!departments.ids.has(primaryDepartmentId)) {
+          throw new ArtifactError(`faculty[${index}].primary_department_id is unknown`);
+        }
+        if (
+          !Array.isArray(person.memberships) ||
+          !person.memberships.some(
+            (membership) =>
+              membership?.department_id === primaryDepartmentId &&
+              membership.included !== false &&
+              ["faculty", "teaching", "emeritus"].includes(membership.role),
+          )
+        ) {
+          throw new ArtifactError(
+            `faculty[${index}].primary_department_id is not an included membership`,
+          );
+        }
+      }
+      return {
+        ...person,
+        primary_department_id: primaryDepartmentId,
+        school_ids: hasSchools
+          ? knownIdArray(person.school_ids, schools.ids, `faculty[${index}].school_ids`, {
+              allowEmpty: false,
+            })
+          : ["engineering"],
+      };
+    });
     const requireKeywords = artifact.schema_version >= 6;
     const keywords = parseKeywords(artifact.keywords, layouts, {
       required: requireKeywords,

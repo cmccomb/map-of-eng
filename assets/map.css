@@ -573,6 +573,16 @@ select:focus {
   color: var(--quiet);
 }
 
+.suggestion-text {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.suggestion-detail {
+  line-height: 1.35;
+}
+
 .suggestion-empty {
   padding: 0.65rem;
   color: var(--quiet);

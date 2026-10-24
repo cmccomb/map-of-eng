@@ -311,6 +311,39 @@ function departmentNames(point) {
     .filter(Boolean);
 }
 
+function facultyPrimaryDetail(person) {
+  const department = state.departmentById.get(person.primary_department_id);
+  if (!department) {
+    return person.primary_department_basis === "unresolved"
+      ? "Primary department unresolved"
+      : "";
+  }
+  const basis = person.primary_department_basis;
+  const inference = basis === "inferred_advisee_count"
+    ? " (inferred from PhD students)"
+    : basis === "inferred_profile_title"
+      ? " (inferred from faculty title)"
+      : "";
+  const otherDepartments = Array.isArray(person.memberships)
+    ? [
+        ...new Set(
+          person.memberships
+            .filter((membership) => membership?.included !== false)
+            .map((membership) => membership?.department_id)
+            .filter(
+              (departmentId) =>
+                departmentId && departmentId !== person.primary_department_id,
+            )
+            .map((departmentId) => state.departmentById.get(departmentId)?.title)
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  return `Primary department: ${department.title}${inference}${
+    otherDepartments.length ? ` · Also: ${otherDepartments.join(", ")}` : ""
+  }`;
+}
+
 function keywordPath(keyword) {
   const path = [];
   let current = keyword;
@@ -1800,6 +1833,7 @@ function createMultiSelect({
   activeIds,
   itemId,
   itemLabel,
+  itemDetail = () => "",
   itemCount,
   itemAvailable = () => true,
   selectedLabel = itemLabel,
@@ -1882,6 +1916,7 @@ function createMultiSelect({
       button.dataset.itemId = itemId(item);
       const name = document.createElement("span");
       name.textContent = itemLabel(item);
+      const detail = itemDetail(item);
       const count = document.createElement("small");
       const workCount = Number(itemCount(item) || 0);
       count.textContent = workCount
@@ -1889,7 +1924,17 @@ function createMultiSelect({
         : Number(item.publication_count) === 0
           ? "0 mapped works"
           : "0 matching works";
-      button.append(name, count);
+      if (detail) {
+        const text = document.createElement("span");
+        text.className = "suggestion-text";
+        const detailLine = document.createElement("small");
+        detailLine.className = "suggestion-detail";
+        detailLine.textContent = detail;
+        text.append(name, detailLine);
+        button.append(text, count);
+      } else {
+        button.append(name, count);
+      }
       listItem.append(button);
       suggestionsList.append(listItem);
     });
@@ -1904,14 +1949,15 @@ function createMultiSelect({
     for (const item of selectedItems) {
       const id = itemId(item);
       const label = itemLabel(item);
+      const fullLabel = selectedLabel(item);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "filter-chip";
       button.dataset.itemId = id;
-      button.title = `Remove ${label}`;
+      button.title = `Remove ${fullLabel}`;
       button.setAttribute("aria-label", `Remove ${label}`);
       const name = document.createElement("span");
-      name.textContent = selectedLabel(item);
+      name.textContent = fullLabel;
       const close = document.createElement("i");
       close.textContent = "×";
       close.setAttribute("aria-hidden", "true");
@@ -2077,8 +2123,20 @@ const authorFilter = createMultiSelect({
   activeIds: state.activeFaculty,
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
+  itemDetail: facultyPrimaryDetail,
   itemCount: (person) =>
     state.facetCounts.facultyCounts.get(person.person_id) || 0,
+  selectedLabel: (person) => {
+    const department = state.departmentById.get(person.primary_department_id);
+    const inferred = ["inferred_advisee_count", "inferred_profile_title"].includes(
+      person.primary_department_basis,
+    );
+    return department
+      ? `${person.display_name} · ${department.title}${
+          inferred ? " (inferred)" : ""
+        }`
+      : person.display_name;
+  },
 });
 
 const schoolFilter = createMultiSelect({

@@ -116,6 +116,9 @@ retains its Engineering name for this rollout. A listed faculty member with no
 mapped works may still have publications outside the collected records. Author
 and department searches include these roster entries and show a coverage note
 when a selection has no mapped publications.
+When a primary department is available, faculty search shows it and
+labels inferred choices. Other included memberships remain visible there and
+continue to match department filters; an unresolved primary is left unresolved.
 
 When a work comes from a separately verified CMU or publisher record rather
 than a Scholar profile, its detail panel identifies that source and links the

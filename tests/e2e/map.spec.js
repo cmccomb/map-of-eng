@@ -196,6 +196,50 @@ test("zero-work faculty and departments remain selectable with clear coverage st
   await expect(page.locator("#empty-copy")).toContainText("No publications are mapped to this department yet");
 });
 
+test("faculty search shows the supported primary and retains secondary department filters", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.catalogs.faculty[0].memberships = [
+    { department_id: "d-bme", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  artifact.catalogs.faculty[0].primary_department_id = "d-me";
+  artifact.catalogs.faculty[0].primary_department_basis = "inferred_advisee_count";
+  artifact.catalogs.faculty[1].memberships = [
+    { department_id: "d-ece", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  artifact.catalogs.faculty[1].primary_department_id = "";
+  artifact.catalogs.faculty[1].primary_department_basis = "unresolved";
+  artifact.points[0].department_ids = ["d-me", "d-bme"];
+  await openMap(page, artifact);
+
+  const authorSearch = page.locator("#author-search");
+  await authorSearch.fill("Alice");
+  await expect(page.locator("#author-suggestions")).toContainText(
+    "Primary department: Mechanical Engineering (inferred from PhD students) · Also: Biomedical Engineering",
+  );
+  await authorSearch.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText(
+    "Alice Adams · Mechanical Engineering (inferred)",
+  );
+
+  await chooseComboOption(page, "#department-search", "Biomedical Engineering");
+  await expectPublicationStatus(page, "2 of 10 publications match");
+  await expect(page.locator("#selected-authors")).toContainText("Alice Adams");
+
+  await page.locator("#clear-filters").click();
+  await authorSearch.fill("Bob");
+  await expect(page.locator("#author-suggestions")).toContainText("Primary department unresolved");
+  await expect(page.locator("#author-suggestions")).not.toContainText(
+    "Primary department: Electrical and Computer Engineering",
+  );
+  await authorSearch.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText("Bob Brown");
+  await expect(page.locator("#selected-authors")).not.toContainText(
+    "Electrical and Computer Engineering",
+  );
+});
+
 test("publication details disclose a separately verified record", async ({ page }) => {
   const artifact = makeArtifact();
   for (const point of artifact.points) {

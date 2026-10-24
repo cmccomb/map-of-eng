@@ -181,6 +181,45 @@ test("artifact parser preserves the school hierarchy and validates school IDs", 
   assert.match([...partiallyParsed.omission_reasons.keys()][0], /school_ids contains an unknown id/);
 });
 
+test("faculty primary departments must be included memberships", () => {
+  const source = makeSchoolArtifact();
+  const alice = source.catalogs.faculty[0];
+  alice.memberships = [
+    { department_id: "d-bme", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  alice.primary_department_id = "d-me";
+  alice.primary_department_basis = "inferred_advisee_count";
+  const parsed = core.parseArtifact(source);
+  assert.equal(parsed.catalogs.faculty[0].primary_department_id, "d-me");
+  assert.deepEqual(parsed.catalogs.faculty[0].memberships, alice.memberships);
+  assert.deepEqual(parsed.points[0].department_ids, ["d-me"]);
+
+  const unknown = structuredClone(source);
+  unknown.catalogs.faculty[0].primary_department_id = "unknown";
+  assert.throws(() => core.parseArtifact(unknown), /primary_department_id is unknown/);
+
+  const notIncluded = structuredClone(source);
+  notIncluded.catalogs.faculty[0].memberships = [{ department_id: "d-bme", role: "faculty" }];
+  assert.throws(() => core.parseArtifact(notIncluded), /not an included membership/);
+
+  const excluded = structuredClone(source);
+  excluded.catalogs.faculty[0].memberships[1].included = false;
+  assert.throws(() => core.parseArtifact(excluded), /not an included membership/);
+
+  const courtesy = structuredClone(source);
+  courtesy.catalogs.faculty[0].memberships[1].role = "adjunct";
+  assert.throws(() => core.parseArtifact(courtesy), /not an included membership/);
+
+  const unresolved = structuredClone(source);
+  unresolved.catalogs.faculty[0].primary_department_id = "";
+  unresolved.catalogs.faculty[0].primary_department_basis = "unresolved";
+  assert.equal(core.parseArtifact(unresolved).catalogs.faculty[0].primary_department_id, "");
+
+  const legacy = makeSchoolArtifact();
+  assert.equal(core.parseArtifact(legacy).catalogs.faculty[0].primary_department_id, "");
+});
+
 test("bad rows are omitted without allowing them to reserve a work id", () => {
   const source = makeArtifact();
   const validCopy = { ...source.points[0] };
