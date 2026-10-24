@@ -20,10 +20,10 @@ artifact. Visitors can build removable filter pills for publication-title
 terms, research topics, departments, and faculty authors; constrain publication
 years with exact bounds or recent-year presets; choose between highlighting
 matches in context and showing matches alone; color comparisons by title term,
-department, or faculty author; and zoom to the resulting subset. Faculty,
-department, and topic suggestions recalculate their counts from the other
-active dimensions and omit impossible choices. Publications can also be colored
-by year or citation count.
+college or school, department, or faculty author; and zoom to the resulting
+subset. Faculty, department, and topic suggestions recalculate their counts
+from the other active dimensions and omit impossible choices. Publications can
+also be colored by year or citation count.
 The year scale is linear across the central 98% of dated works; the citation
 scale is logarithmic through the 99th percentile. Explicit `≤` and `≥` legend
 endpoints retain outliers without letting them compress the rest of the corpus
@@ -75,6 +75,13 @@ categorical palette. Searchable color keys list the faculty or departments
 represented in the current matches and can also add or remove filters. For a
 work with multiple connections, an actively selected entity takes color
 priority; otherwise the first cataloged connection is used.
+
+College coloring uses the same palette and lets the color key select a college
+or school. A publication associated with multiple schools takes the color of a
+selected school when one is active; otherwise it takes the color of the school
+with fewer affiliations in the full corpus, with school ID breaking ties. This
+keeps smaller schools visible even when all their publications are joint works.
+The color key counts publications actually drawn in each color.
 
 Year and citation modes use separate ordered, theme-aware color ramps generated
 in OKLab. Their legends retain the full-corpus domain while filters are active,

@@ -25,6 +25,8 @@ const state = {
   facultyById: new Map(),
   keywordById: new Map(),
   layoutById: new Map(),
+  schoolColors: new Map(),
+  schoolAffiliationCounts: new Map(),
   departmentColors: new Map(),
   facultyColors: new Map(),
   titleColors: new Map(),
@@ -204,6 +206,7 @@ const resetViewButton = document.querySelector("#reset-view");
 const copyViewButton = document.querySelector("#copy-view");
 const mapLegend = document.querySelector("#map-legend");
 const legendSummary = document.querySelector("#legend-summary");
+const collegeColorNote = document.querySelector("#college-color-note");
 const sizeLegend = document.querySelector("#size-legend");
 const sizeNote = document.querySelector("#size-note");
 const emptyState = document.querySelector("#empty-state");
@@ -465,6 +468,28 @@ function drawBatch(screenPoints, radius, fillStyle, alpha) {
   context.restore();
 }
 
+function schoolColorId(point) {
+  let selectedId = "";
+  let selectedActive = false;
+  let selectedCount = Infinity;
+  for (const id of point.school_ids || []) {
+    if (!state.schoolColors.has(id)) continue;
+    const active = state.activeSchools.has(id);
+    const count = state.schoolAffiliationCounts.get(id) ?? Infinity;
+    if (
+      !selectedId ||
+      (active && !selectedActive) ||
+      (active === selectedActive &&
+        (count < selectedCount || (count === selectedCount && id < selectedId)))
+    ) {
+      selectedId = id;
+      selectedActive = active;
+      selectedCount = count;
+    }
+  }
+  return selectedId;
+}
+
 function colorFor(point) {
   if (state.colorMode === "title" && state.activeTitleTerms.size) {
     for (const query of state.activeTitleTerms.keys()) {
@@ -473,6 +498,12 @@ function colorFor(point) {
   }
   if (state.colorMode === "year") return yearColor(point);
   if (state.colorMode === "citations") return citationColor(point);
+  if (state.colorMode === "school") {
+    const schoolId = schoolColorId(point);
+    return schoolId
+      ? state.schoolColors.get(schoolId)
+      : themeColor("--canvas-unassigned", "#657789");
+  }
   if (state.colorMode === "faculty") {
     const personId = core.preferredId(
       point.faculty_ids,
@@ -1013,14 +1044,36 @@ function renderCitationLegend() {
 
 function colorKeyItems(mode = state.colorMode) {
   const isFaculty = mode === "faculty";
-  const idField = isFaculty ? "person_id" : "department_id";
+  const isSchool = mode === "school";
+  const idField = isFaculty
+    ? "person_id"
+    : isSchool
+      ? "school_id"
+      : "department_id";
   const labelField = isFaculty ? "display_name" : "title";
   const pointField = isFaculty ? "faculty_ids" : "department_ids";
-  const catalog = isFaculty ? state.faculty : state.departments;
-  const colors = isFaculty ? state.facultyColors : state.departmentColors;
-  const activeIds = isFaculty ? state.activeFaculty : state.activeDepartments;
+  const catalog = isFaculty
+    ? state.faculty
+    : isSchool
+      ? state.schools
+      : state.departments;
+  const colors = isFaculty
+    ? state.facultyColors
+    : isSchool
+      ? state.schoolColors
+      : state.departmentColors;
+  const activeIds = isFaculty
+    ? state.activeFaculty
+    : isSchool
+      ? state.activeSchools
+      : state.activeDepartments;
   const counts = new Map();
   for (const point of state.matchedPoints) {
+    if (isSchool) {
+      const schoolId = schoolColorId(point);
+      if (schoolId) counts.set(schoolId, (counts.get(schoolId) || 0) + 1);
+      continue;
+    }
     for (const id of point[pointField]) {
       if (colors.has(id)) counts.set(id, (counts.get(id) || 0) + 1);
     }
@@ -1041,8 +1094,17 @@ function colorKeyItems(mode = state.colorMode) {
 
 function appendColorKeyItems(items, mode) {
   const facultyMode = mode === "faculty";
-  const singular = facultyMode ? "faculty member" : "department";
-  const plural = facultyMode ? "faculty members" : "departments";
+  const schoolMode = mode === "school";
+  const singular = facultyMode
+    ? "faculty member"
+    : schoolMode
+      ? "college or school"
+      : "department";
+  const plural = facultyMode
+    ? "faculty members"
+    : schoolMode
+      ? "colleges and schools"
+      : "departments";
   legendSummary.textContent = `${items.length.toLocaleString()} ${
     items.length === 1 ? singular : plural
   } represented`;
@@ -1109,7 +1171,9 @@ function renderSizeLegend() {
 
 function renderLegend() {
   mapLegend.replaceChildren();
+  mapLegend.classList.toggle("school-color-key", state.colorMode === "school");
   legendSummary.textContent = "";
+  collegeColorNote.hidden = state.colorMode !== "school";
   if (state.colorMode === "year") {
     legendSummary.textContent = "Publications by year";
     renderYearLegend();
@@ -1138,6 +1202,13 @@ function renderLegend() {
         "No mapped faculty",
         themeColor("--canvas-unassigned", "#657789"),
       );
+    } else {
+      legendSummary.textContent = "No matching publications";
+    }
+  } else if (state.colorMode === "school") {
+    const items = colorKeyItems("school");
+    if (items.length) {
+      appendColorKeyItems(items, "school");
     } else {
       legendSummary.textContent = "No matching publications";
     }
@@ -1519,7 +1590,7 @@ function restoreUrlState(search = window.location.search) {
   populateLayouts();
 
   if (
-    ["title", "department", "faculty", "year", "citations"].includes(
+    ["title", "school", "department", "faculty", "year", "citations"].includes(
       parsed.colorMode,
     )
   ) {
@@ -1643,6 +1714,15 @@ function initializeDepartmentColors() {
   state.departments.forEach((department, index) => {
     state.departmentColors.set(department.department_id, palette[index]);
   });
+}
+
+function initializeSchoolColors() {
+  const generator = globalThis.ResearchMapColors?.generatePerceptualPalette;
+  if (!generator) throw new Error("College color generator is unavailable");
+  const palette = generator(state.schools.length, resolvedTheme());
+  state.schoolColors = new Map(
+    state.schools.map((school, index) => [school.school_id, palette[index]]),
+  );
 }
 
 function initializeSequentialColors() {
@@ -1923,11 +2003,13 @@ function initializeFacultyColors() {
 }
 
 function refreshThemeColors() {
-  if (state.departments.length || state.faculty.length) {
+  if (state.schools.length || state.departments.length || state.faculty.length) {
+    state.schoolColors = new Map();
     state.departmentColors = new Map();
     state.facultyColors = new Map();
     state.titleColors = new Map();
     state.titlePalette = [];
+    initializeSchoolColors();
     initializeFacultyColors();
     initializeDepartmentColors();
     initializeSequentialColors();
@@ -2459,10 +2541,15 @@ mapLegend.addEventListener("click", (event) => {
   if (!button) return;
   const { itemId, colorMode } = button.dataset;
   const activeIds =
-    colorMode === "faculty" ? state.activeFaculty : state.activeDepartments;
+    colorMode === "faculty"
+      ? state.activeFaculty
+      : colorMode === "school"
+        ? state.activeSchools
+        : state.activeDepartments;
   if (activeIds.has(itemId)) activeIds.delete(itemId);
   else activeIds.add(itemId);
   if (colorMode === "faculty") authorFilter.renderSelected();
+  else if (colorMode === "school") schoolFilter.renderSelected();
   else departmentFilter.renderSelected();
   applyFilters();
 });
@@ -2855,7 +2942,19 @@ async function loadMap() {
       state.keywords.map((item) => [item.keyword_id, item]),
     );
     state.points = artifact.points.map(preparePoint);
+    state.schoolAffiliationCounts = new Map(
+      state.schools.map((school) => [school.school_id, 0]),
+    );
+    for (const point of state.points) {
+      for (const id of point.school_ids) {
+        state.schoolAffiliationCounts.set(
+          id,
+          state.schoolAffiliationCounts.get(id) + 1,
+        );
+      }
+    }
     state.omittedPointCount = artifact.omitted_point_count;
+    state.schoolColors = new Map();
     state.departmentColors = new Map();
     state.facultyColors = new Map();
     state.titleColors = new Map();
@@ -2882,6 +2981,7 @@ async function loadMap() {
     if (artifact.warnings.length) console.warn(...artifact.warnings);
 
     populateLayouts();
+    initializeSchoolColors();
     initializeFacultyColors();
     initializeDepartmentColors();
     initializeSequentialColors();

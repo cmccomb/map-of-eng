@@ -655,10 +655,6 @@ select:focus {
   grid-column: span 2;
 }
 
-.color-control label:nth-child(n + 4) {
-  grid-column: span 3;
-}
-
 .size-control {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -820,6 +816,13 @@ select:focus {
   color: var(--quiet);
   font-size: 0.68rem;
   scrollbar-color: var(--line-strong) transparent;
+}
+
+.legend-note {
+  margin: 0.55rem 0 0;
+  color: var(--quiet);
+  font-size: 0.64rem;
+  line-height: 1.4;
 }
 
 .size-legend {
@@ -1432,6 +1435,29 @@ canvas.dragging {
   color: var(--quiet);
   font-size: 0.64rem;
   font-variant-numeric: tabular-nums;
+}
+
+.school-color-key .color-key-item {
+  grid-template-columns: 0.85rem minmax(0, 1fr);
+  grid-template-areas:
+    "swatch name"
+    ". count";
+  row-gap: 0.1rem;
+}
+
+.school-color-key .color-key-item > i {
+  grid-area: swatch;
+}
+
+.school-color-key .color-key-item > span {
+  grid-area: name;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.school-color-key .color-key-item > small {
+  grid-area: count;
 }
 
 [hidden] {
