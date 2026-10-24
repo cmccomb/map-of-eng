@@ -1,6 +1,6 @@
 {
-  "title": "CMU Engineering Research",
-  "heading": "Engineering Research at CMU",
+  "title": "CMU Faculty Research",
+  "heading": "Faculty Research at CMU",
   "default_layout_id": "tsne",
   "dataset_id": "ccm/cmu-engineering-publications",
   "dataset_revision": "main",
