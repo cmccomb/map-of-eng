@@ -311,36 +311,85 @@ function departmentNames(point) {
     .filter(Boolean);
 }
 
-function facultyPrimaryDetail(person) {
+function facultyPrimaryHome(person) {
+  if (Object.hasOwn(person, "primary_academic_home_type")) {
+    return person.primary_academic_home_type
+      ? {
+          type: person.primary_academic_home_type,
+          id: person.primary_academic_home_id,
+          title: person.primary_academic_home_title,
+          schoolId: person.primary_academic_home_school_id,
+          basis: person.primary_academic_home_basis,
+        }
+      : null;
+  }
   const department = state.departmentById.get(person.primary_department_id);
-  if (!department) {
-    return person.primary_department_basis === "unresolved"
-      ? "Primary department unresolved"
+  if (!department) return null;
+  if (["heinz-faculty", "tepper-faculty"].includes(department.department_id)) {
+    return {
+      type: "school",
+      id: department.school_id,
+      title: state.schoolById.get(department.school_id)?.title || department.title,
+      schoolId: department.school_id,
+      basis: person.primary_department_basis,
+    };
+  }
+  return {
+    type: "academic_home",
+    id: department.department_id,
+    title: department.title,
+    schoolId: department.school_id,
+    basis: person.primary_department_basis,
+  };
+}
+
+function facultyPrimaryDetail(person) {
+  const home = facultyPrimaryHome(person);
+  if (!home) {
+    return person.primary_academic_home_basis === "unresolved" ||
+      person.primary_department_basis === "unresolved"
+      ? "Primary academic home unresolved"
       : "";
   }
-  const basis = person.primary_department_basis;
+  const label = {
+    department: "Primary department",
+    institute: "Primary institute",
+    constituent_school: "Primary constituent school",
+    academic_area: "Primary academic area",
+    school: "Primary school",
+  }[home.type] || "Primary academic home";
+  const basis = home.basis;
   const inference = basis === "inferred_advisee_count"
     ? " (inferred from PhD students)"
     : basis === "inferred_profile_title"
       ? " (inferred from faculty title)"
       : "";
-  const otherDepartments = Array.isArray(person.memberships)
+  const otherHomes = Array.isArray(person.memberships)
     ? [
         ...new Set(
           person.memberships
-            .filter((membership) => membership?.included !== false)
+            .filter((membership) =>
+              membership?.included !== false &&
+              ["faculty", "teaching", "emeritus"].includes(membership.role))
             .map((membership) => membership?.department_id)
             .filter(
               (departmentId) =>
-                departmentId && departmentId !== person.primary_department_id,
+                departmentId && departmentId !== home.id &&
+                !(home.type === "school" &&
+                  departmentId === `${home.schoolId}-faculty`),
             )
-            .map((departmentId) => state.departmentById.get(departmentId)?.title)
+            .map((departmentId) => {
+              const department = state.departmentById.get(departmentId);
+              return ["heinz-faculty", "tepper-faculty"].includes(departmentId)
+                ? state.schoolById.get(department?.school_id)?.title
+                : department?.title;
+            })
             .filter(Boolean),
         ),
       ]
     : [];
-  return `Primary department: ${department.title}${inference}${
-    otherDepartments.length ? ` · Also: ${otherDepartments.join(", ")}` : ""
+  return `${label}: ${home.title}${inference}${
+    otherHomes.length ? ` · Also: ${otherHomes.join(", ")}` : ""
   }`;
 }
 
@@ -2127,12 +2176,12 @@ const authorFilter = createMultiSelect({
   itemCount: (person) =>
     state.facetCounts.facultyCounts.get(person.person_id) || 0,
   selectedLabel: (person) => {
-    const department = state.departmentById.get(person.primary_department_id);
+    const home = facultyPrimaryHome(person);
     const inferred = ["inferred_advisee_count", "inferred_profile_title"].includes(
-      person.primary_department_basis,
+      home?.basis,
     );
-    return department
-      ? `${person.display_name} · ${department.title}${
+    return home
+      ? `${person.display_name} · ${home.title}${
           inferred ? " (inferred)" : ""
         }`
       : person.display_name;

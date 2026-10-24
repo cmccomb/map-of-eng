@@ -18,6 +18,14 @@
   const MAX_URL_STATE_VALUE_LENGTH = 500;
   const FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
   const DATASET_ID_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+  const PRIMARY_HOME_TYPES = new Set([
+    "department",
+    "constituent_school",
+    "institute",
+    "academic_area",
+    "school",
+  ]);
+  const ROSTER_CONTAINER_IDS = new Set(["heinz-faculty", "tepper-faculty"]);
 
   class ArtifactError extends Error {
     constructor(message) {
@@ -574,8 +582,18 @@
       if (!schools.ids.has(schoolId)) {
         throw new ArtifactError(`departments[${index}].school_id is unknown`);
       }
-      return { ...department, school_id: schoolId };
+      const schoolTitle = schools.items.find((school) => school.school_id === schoolId)?.title;
+      return {
+        ...department,
+        school_id: schoolId,
+        title: ROSTER_CONTAINER_IDS.has(department.department_id)
+          ? schoolTitle
+          : department.title,
+      };
     });
+    const departmentById = new Map(
+      parsedDepartments.map((department) => [department.department_id, department]),
+    );
     const parsedFaculty = faculty.items.map((person, index) => {
       const primaryDepartmentId = optionalString(person.primary_department_id, {
         maxLength: 200,
@@ -598,9 +616,91 @@
           );
         }
       }
+      const hasTypedHome = Object.hasOwn(person, "primary_academic_home_type");
+      const homeType = optionalString(person.primary_academic_home_type, {
+        maxLength: 40,
+      });
+      const homeId = optionalString(person.primary_academic_home_id, {
+        maxLength: 200,
+      });
+      const homeTitle = optionalString(person.primary_academic_home_title, {
+        maxLength: 500,
+      });
+      const homeSchoolId = optionalString(person.primary_academic_home_school_id, {
+        maxLength: 200,
+      });
+      const homeSourceUrl = optionalString(person.primary_academic_home_source_url, {
+        maxLength: 4000,
+      });
+      const homeVerifiedAt = optionalString(person.primary_academic_home_verified_at, {
+        maxLength: 40,
+      });
+      const homeBasis = optionalString(person.primary_academic_home_basis, {
+        maxLength: 100,
+      });
+      if (hasTypedHome) {
+        if (homeType) {
+          if (!PRIMARY_HOME_TYPES.has(homeType)) {
+            throw new ArtifactError(`faculty[${index}].primary_academic_home_type is unknown`);
+          }
+          if (!homeId || !homeTitle || !homeSchoolId || !homeSourceUrl || !homeVerifiedAt || !homeBasis) {
+            throw new ArtifactError(`faculty[${index}] has an incomplete primary academic home`);
+          }
+          if (!schools.ids.has(homeSchoolId)) {
+            throw new ArtifactError(`faculty[${index}].primary_academic_home_school_id is unknown`);
+          }
+          if (!safeHttpUrl(homeSourceUrl)) {
+            throw new ArtifactError(`faculty[${index}].primary_academic_home_source_url is invalid`);
+          }
+          const includedMembershipIds = new Set(
+            Array.isArray(person.memberships)
+              ? person.memberships
+                  .filter((membership) =>
+                    membership?.included !== false &&
+                    ["faculty", "teaching", "emeritus"].includes(membership.role))
+                  .map((membership) => membership.department_id)
+              : [],
+          );
+          if (homeType === "school" || homeType === "academic_area") {
+            if (
+              (homeType === "school" && homeId !== homeSchoolId) ||
+              (homeType === "academic_area" && !homeId.startsWith(`${homeSchoolId}:`))
+            ) {
+              throw new ArtifactError(`faculty[${index}] has an invalid primary academic home`);
+            }
+            if (![...includedMembershipIds].some((id) =>
+              departmentById.get(id)?.school_id === homeSchoolId)) {
+              throw new ArtifactError(`faculty[${index}] has a primary academic home outside included memberships`);
+            }
+          } else if (
+            ROSTER_CONTAINER_IDS.has(homeId) ||
+            departmentById.get(homeId)?.school_id !== homeSchoolId ||
+            !includedMembershipIds.has(homeId)
+          ) {
+            throw new ArtifactError(`faculty[${index}] has a primary academic home outside included memberships`);
+          }
+          if (primaryDepartmentId && (homeType !== "department" || primaryDepartmentId !== homeId)) {
+            throw new ArtifactError(`faculty[${index}] has a conflicting legacy primary department`);
+          }
+        } else if (
+          homeId || homeTitle || homeSchoolId || homeSourceUrl || homeVerifiedAt ||
+          (homeBasis && homeBasis !== "unresolved") || primaryDepartmentId
+        ) {
+          throw new ArtifactError(`faculty[${index}] has an incomplete unresolved primary academic home`);
+        }
+      }
       return {
         ...person,
         primary_department_id: primaryDepartmentId,
+        ...(hasTypedHome ? {
+          primary_academic_home_type: homeType,
+          primary_academic_home_id: homeId,
+          primary_academic_home_title: homeTitle,
+          primary_academic_home_school_id: homeSchoolId,
+          primary_academic_home_source_url: safeHttpUrl(homeSourceUrl),
+          primary_academic_home_verified_at: homeVerifiedAt,
+          primary_academic_home_basis: homeBasis,
+        } : {}),
         school_ids: hasSchools
           ? knownIdArray(person.school_ids, schools.ids, `faculty[${index}].school_ids`, {
               allowEmpty: false,

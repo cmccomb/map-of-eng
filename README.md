@@ -116,9 +116,13 @@ retains its Engineering name for this rollout. A listed faculty member with no
 mapped works may still have publications outside the collected records. Author
 and department searches include these roster entries and show a coverage note
 when a selection has no mapped publications.
-When a primary department is available, faculty search shows it and
-labels inferred choices. Other included memberships remain visible there and
-continue to match department filters; an unresolved primary is left unresolved.
+When a typed primary academic home is available, faculty search labels it as a
+department, institute, constituent school, academic area, or school and marks
+inferred choices. Heinz and Tepper school homes appear by their school names,
+not by the technical faculty-roster container names. Other included
+memberships remain visible and continue to match filters. An explicit blank
+primary remains unresolved. Older artifacts with only the legacy primary ID
+show a generic academic-home label where its unit type is unknown.
 
 When a work comes from a separately verified CMU or publisher record rather
 than a Scholar profile, its detail panel identifies that source and links the
