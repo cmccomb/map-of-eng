@@ -196,6 +196,157 @@ test("zero-work faculty and departments remain selectable with clear coverage st
   await expect(page.locator("#empty-copy")).toContainText("No publications are mapped to this department yet");
 });
 
+test("faculty search shows the supported primary and retains secondary department filters", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.catalogs.faculty[0].memberships = [
+    { department_id: "d-bme", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  artifact.catalogs.faculty[0].primary_department_id = "d-me";
+  artifact.catalogs.faculty[0].primary_department_basis = "inferred_advisee_count";
+  Object.assign(artifact.catalogs.faculty[0], {
+    primary_academic_home_type: "department",
+    primary_academic_home_id: "d-me",
+    primary_academic_home_title: "Mechanical Engineering",
+    primary_academic_home_school_id: "engineering",
+    primary_academic_home_source_url: "https://example.org/advisees",
+    primary_academic_home_verified_at: "2026-10-24",
+    primary_academic_home_basis: "inferred_advisee_count",
+  });
+  artifact.catalogs.faculty[1].memberships = [
+    { department_id: "d-ece", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  artifact.catalogs.faculty[1].primary_department_id = "";
+  artifact.catalogs.faculty[1].primary_department_basis = "unresolved";
+  artifact.catalogs.faculty[1].primary_academic_home_type = "unresolved";
+  artifact.catalogs.faculty[1].primary_academic_home_basis = "unresolved";
+  artifact.points[0].department_ids = ["d-me", "d-bme"];
+  await openMap(page, artifact);
+
+  const authorSearch = page.locator("#author-search");
+  await authorSearch.fill("Alice");
+  await expect(page.locator("#author-suggestions")).toContainText(
+    "Primary department: Mechanical Engineering (inferred from PhD students) · Also: Biomedical Engineering",
+  );
+  await authorSearch.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText(
+    "Alice Adams · Mechanical Engineering (inferred)",
+  );
+
+  await chooseComboOption(page, "#department-search", "Biomedical Engineering");
+  await expectPublicationStatus(page, "2 of 10 publications match");
+  await expect(page.locator("#selected-authors")).toContainText("Alice Adams");
+
+  await page.locator("#clear-filters").click();
+  await authorSearch.fill("Bob");
+  await expect(page.locator("#author-suggestions")).toContainText("Primary academic home unresolved");
+  await expect(page.locator("#author-suggestions")).not.toContainText(
+    "Primary department: Electrical and Computer Engineering",
+  );
+  await authorSearch.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText("Bob Brown");
+  await expect(page.locator("#selected-authors")).not.toContainText(
+    "Electrical and Computer Engineering",
+  );
+});
+
+test("faculty search labels school, institute, and campus-approved homes without roster-container titles", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.catalogs.schools.push(
+    { school_id: "heinz", title: "Heinz College", publication_count: 1 },
+    { school_id: "tepper", title: "Tepper School of Business", publication_count: 1 },
+  );
+  artifact.catalogs.departments.push(
+    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz College faculty (shared roster container)", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper School of Business faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", unit_type: "constituent_school", publication_count: 0 },
+    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", unit_type: "institute", publication_count: 0 },
+    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", unit_type: "department", publication_count: 0 },
+  );
+  const [tepper, pedro, institute, africa, unresolved] = artifact.catalogs.faculty;
+  const home = (person, type, id, title, schoolId) => Object.assign(person, {
+    primary_department_id: type === "department" ? id : "",
+    primary_academic_home_type: type,
+    primary_academic_home_id: id,
+    primary_academic_home_title: title,
+    primary_academic_home_school_id: schoolId,
+    primary_academic_home_source_url: "https://example.org/cmu-profile",
+    primary_academic_home_verified_at: "2026-10-24",
+    primary_academic_home_basis: "reviewed",
+  });
+  tepper.memberships = [{ department_id: "tepper-faculty", role: "faculty" }];
+  tepper.school_ids = ["tepper"];
+  home(tepper, "school", "tepper", "Tepper School of Business", "tepper");
+  tepper.primary_academic_home_basis = "school_fallback";
+  pedro.display_name = "Pedro Ferreira";
+  pedro.memberships = [
+    { department_id: "heinz-faculty", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  pedro.school_ids = ["engineering", "heinz"];
+  home(pedro, "school", "heinz", "Heinz College", "heinz");
+  institute.memberships = [{ department_id: "hcii", role: "faculty" }];
+  institute.school_ids = ["scs"];
+  home(institute, "institute", "hcii", "Human-Computer Interaction Institute", "scs");
+  africa.memberships = [{ department_id: "cmu-africa", role: "faculty" }];
+  home(africa, "department", "cmu-africa", "CMU-Africa", "engineering");
+  unresolved.memberships = [
+    { department_id: "hcii", role: "faculty" },
+    { department_id: "d-csd", role: "faculty" },
+  ];
+  unresolved.primary_academic_home_type = "unresolved";
+  unresolved.primary_academic_home_basis = "unresolved";
+  const constituent = {
+    person_id: "f-constituent",
+    display_name: "Isabel Singh",
+    publication_count: 0,
+    school_ids: ["heinz"],
+    memberships: [{ department_id: "heinz-ism", role: "faculty" }],
+  };
+  home(constituent, "constituent_school", "heinz-ism", "School of Information Systems and Management", "heinz");
+  const area = {
+    person_id: "f-area",
+    display_name: "Ari Chen",
+    publication_count: 0,
+    school_ids: ["tepper"],
+    memberships: [{ department_id: "tepper-faculty", role: "faculty" }],
+  };
+  home(area, "academic_area", "tepper:operations", "Operations Research", "tepper");
+  artifact.catalogs.faculty.push(constituent, area);
+  await openMap(page, artifact);
+
+  const search = page.locator("#author-search");
+  for (const [name, expected] of [
+    ["Alice", "Primary school: Tepper School of Business (no narrower unit verified)"],
+    ["Pedro", "Primary school: Heinz College · Also: Mechanical Engineering"],
+    ["Carol", "Primary institute: Human-Computer Interaction Institute"],
+    ["Dan", "Primary department: CMU-Africa"],
+    ["Erin", "Primary academic home unresolved"],
+    ["Isabel", "Primary constituent school: School of Information Systems and Management"],
+    ["Ari", "Primary academic area: Operations Research"],
+  ]) {
+    await search.fill(name);
+    await expect(page.locator("#author-suggestions")).toContainText(expected);
+    await expect(page.locator("#author-suggestions")).not.toContainText("roster container");
+  }
+  await search.fill("Pedro");
+  await search.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText("Pedro Ferreira · Heinz College");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("#toggle-filters").click();
+  await search.fill("Isabel");
+  await expect(page.locator("#author-suggestions")).toContainText("Primary constituent school");
+  const mobileWidth = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport);
+  await page.locator("#department-search").fill("Tepper");
+  await expect(page.locator("#department-suggestions")).toContainText("Tepper School of Business");
+  await expect(page.locator("#department-suggestions")).not.toContainText("Business faculty");
+});
+
 test("publication details disclose a separately verified record", async ({ page }) => {
   const artifact = makeArtifact();
   for (const point of artifact.points) {

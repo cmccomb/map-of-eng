@@ -311,6 +311,97 @@ function departmentNames(point) {
     .filter(Boolean);
 }
 
+function isRosterContainer(department) {
+  return department?.unit_type === "roster_container" ||
+    ["heinz-faculty", "tepper-faculty"].includes(department?.department_id);
+}
+
+function facultyPrimaryHome(person) {
+  if (Object.hasOwn(person, "primary_academic_home_type")) {
+    return person.primary_academic_home_type &&
+      person.primary_academic_home_type !== "unresolved"
+      ? {
+          type: person.primary_academic_home_type,
+          id: person.primary_academic_home_id,
+          title: person.primary_academic_home_title,
+          schoolId: person.primary_academic_home_school_id,
+          basis: person.primary_academic_home_basis,
+        }
+      : null;
+  }
+  const department = state.departmentById.get(person.primary_department_id);
+  if (!department) return null;
+  if (isRosterContainer(department)) {
+    return {
+      type: "school",
+      id: department.school_id,
+      title: state.schoolById.get(department.school_id)?.title || department.title,
+      schoolId: department.school_id,
+      basis: person.primary_department_basis,
+    };
+  }
+  return {
+    type: "academic_home",
+    id: department.department_id,
+    title: department.title,
+    schoolId: department.school_id,
+    basis: person.primary_department_basis,
+  };
+}
+
+function facultyPrimaryDetail(person) {
+  const home = facultyPrimaryHome(person);
+  if (!home) {
+    return person.primary_academic_home_basis === "unresolved" ||
+      person.primary_department_basis === "unresolved"
+      ? "Primary academic home unresolved"
+      : "";
+  }
+  const label = {
+    department: "Primary department",
+    institute: "Primary institute",
+    constituent_school: "Primary constituent school",
+    academic_area: "Primary academic area",
+    school: "Primary school",
+  }[home.type] || "Primary academic home";
+  const basis = home.basis;
+  const inference = basis === "inferred_advisee_count"
+    ? " (inferred from PhD students)"
+    : basis === "inferred_profile_title"
+      ? " (inferred from faculty title)"
+      : basis === "school_fallback"
+        ? " (no narrower unit verified)"
+      : "";
+  const otherHomes = Array.isArray(person.memberships)
+    ? [
+        ...new Set(
+          person.memberships
+            .filter((membership) =>
+              membership?.included !== false &&
+              ["faculty", "teaching", "emeritus"].includes(membership.role))
+            .map((membership) => membership?.department_id)
+            .filter(
+              (departmentId) =>
+                departmentId && departmentId !== home.id &&
+                !(home.type === "school" &&
+                  isRosterContainer(state.departmentById.get(departmentId)) &&
+                  state.departmentById.get(departmentId).school_id === home.schoolId),
+            )
+            .map((departmentId) => {
+              const department = state.departmentById.get(departmentId);
+              return isRosterContainer(department)
+                ? state.schoolById.get(department?.school_id)?.title
+                : department?.title;
+            })
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  return `${label}: ${home.title}${inference}${
+    otherHomes.length ? ` · Also: ${otherHomes.join(", ")}` : ""
+  }`;
+}
+
 function keywordPath(keyword) {
   const path = [];
   let current = keyword;
@@ -1800,6 +1891,7 @@ function createMultiSelect({
   activeIds,
   itemId,
   itemLabel,
+  itemDetail = () => "",
   itemCount,
   itemAvailable = () => true,
   selectedLabel = itemLabel,
@@ -1882,6 +1974,7 @@ function createMultiSelect({
       button.dataset.itemId = itemId(item);
       const name = document.createElement("span");
       name.textContent = itemLabel(item);
+      const detail = itemDetail(item);
       const count = document.createElement("small");
       const workCount = Number(itemCount(item) || 0);
       count.textContent = workCount
@@ -1889,7 +1982,17 @@ function createMultiSelect({
         : Number(item.publication_count) === 0
           ? "0 mapped works"
           : "0 matching works";
-      button.append(name, count);
+      if (detail) {
+        const text = document.createElement("span");
+        text.className = "suggestion-text";
+        const detailLine = document.createElement("small");
+        detailLine.className = "suggestion-detail";
+        detailLine.textContent = detail;
+        text.append(name, detailLine);
+        button.append(text, count);
+      } else {
+        button.append(name, count);
+      }
       listItem.append(button);
       suggestionsList.append(listItem);
     });
@@ -1904,14 +2007,15 @@ function createMultiSelect({
     for (const item of selectedItems) {
       const id = itemId(item);
       const label = itemLabel(item);
+      const fullLabel = selectedLabel(item);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "filter-chip";
       button.dataset.itemId = id;
-      button.title = `Remove ${label}`;
+      button.title = `Remove ${fullLabel}`;
       button.setAttribute("aria-label", `Remove ${label}`);
       const name = document.createElement("span");
-      name.textContent = selectedLabel(item);
+      name.textContent = fullLabel;
       const close = document.createElement("i");
       close.textContent = "×";
       close.setAttribute("aria-hidden", "true");
@@ -2077,8 +2181,20 @@ const authorFilter = createMultiSelect({
   activeIds: state.activeFaculty,
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
+  itemDetail: facultyPrimaryDetail,
   itemCount: (person) =>
     state.facetCounts.facultyCounts.get(person.person_id) || 0,
+  selectedLabel: (person) => {
+    const home = facultyPrimaryHome(person);
+    const inferred = ["inferred_advisee_count", "inferred_profile_title"].includes(
+      home?.basis,
+    );
+    return home
+      ? `${person.display_name} · ${home.title}${
+          inferred ? " (inferred)" : ""
+        }`
+      : person.display_name;
+  },
 });
 
 const schoolFilter = createMultiSelect({

@@ -181,6 +181,162 @@ test("artifact parser preserves the school hierarchy and validates school IDs", 
   assert.match([...partiallyParsed.omission_reasons.keys()][0], /school_ids contains an unknown id/);
 });
 
+test("faculty primary departments must be included memberships", () => {
+  const source = makeSchoolArtifact();
+  const alice = source.catalogs.faculty[0];
+  alice.memberships = [
+    { department_id: "d-bme", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  alice.primary_department_id = "d-me";
+  alice.primary_department_basis = "inferred_advisee_count";
+  const parsed = core.parseArtifact(source);
+  assert.equal(parsed.catalogs.faculty[0].primary_department_id, "d-me");
+  assert.deepEqual(parsed.catalogs.faculty[0].memberships, alice.memberships);
+  assert.deepEqual(parsed.points[0].department_ids, ["d-me"]);
+
+  const unknown = structuredClone(source);
+  unknown.catalogs.faculty[0].primary_department_id = "unknown";
+  assert.throws(() => core.parseArtifact(unknown), /primary_department_id is unknown/);
+
+  const notIncluded = structuredClone(source);
+  notIncluded.catalogs.faculty[0].memberships = [{ department_id: "d-bme", role: "faculty" }];
+  assert.throws(() => core.parseArtifact(notIncluded), /not an included membership/);
+
+  const excluded = structuredClone(source);
+  excluded.catalogs.faculty[0].memberships[1].included = false;
+  assert.throws(() => core.parseArtifact(excluded), /not an included membership/);
+
+  const courtesy = structuredClone(source);
+  courtesy.catalogs.faculty[0].memberships[1].role = "adjunct";
+  assert.throws(() => core.parseArtifact(courtesy), /not an included membership/);
+
+  const unresolved = structuredClone(source);
+  unresolved.catalogs.faculty[0].primary_department_id = "";
+  unresolved.catalogs.faculty[0].primary_department_basis = "unresolved";
+  assert.equal(core.parseArtifact(unresolved).catalogs.faculty[0].primary_department_id, "");
+
+  const legacy = makeSchoolArtifact();
+  assert.equal(core.parseArtifact(legacy).catalogs.faculty[0].primary_department_id, "");
+});
+
+test("typed primary homes validate their school and included role without changing memberships", () => {
+  const source = makeSchoolArtifact();
+  source.catalogs.schools.push(
+    { school_id: "tepper", title: "Tepper School of Business", publication_count: 0 },
+    { school_id: "heinz", title: "Heinz College", publication_count: 0 },
+  );
+  source.catalogs.departments.push(
+    { department_id: "tepper-faculty", school_id: "tepper", title: "Tepper faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-faculty", school_id: "heinz", title: "Heinz faculty", unit_type: "roster_container", publication_count: 0 },
+    { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", unit_type: "constituent_school", publication_count: 0 },
+    { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", unit_type: "institute", publication_count: 0 },
+    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", unit_type: "department", publication_count: 0 },
+  );
+  const person = source.catalogs.faculty[0];
+  person.memberships = [{ department_id: "tepper-faculty", role: "faculty" }];
+  person.school_ids = ["tepper"];
+  Object.assign(person, {
+    primary_department_id: "",
+    primary_academic_home_type: "school",
+    primary_academic_home_id: "tepper",
+    primary_academic_home_title: "Tepper School of Business",
+    primary_academic_home_school_id: "tepper",
+    primary_academic_home_source_url: "https://example.org/profile",
+    primary_academic_home_verified_at: "2026-10-24",
+    primary_academic_home_basis: "reviewed",
+  });
+  const parsed = core.parseArtifact(source);
+  assert.equal(parsed.catalogs.faculty[0].primary_academic_home_id, "tepper");
+  assert.deepEqual(parsed.catalogs.faculty[0].memberships, person.memberships);
+  assert.equal(
+    parsed.catalogs.departments.find((department) => department.department_id === "tepper-faculty").title,
+    "Tepper School of Business",
+  );
+
+  const pedro = structuredClone(source);
+  pedro.catalogs.faculty[0].memberships = [
+    { department_id: "heinz-faculty", role: "faculty" },
+    { department_id: "d-me", role: "faculty" },
+  ];
+  pedro.catalogs.faculty[0].school_ids.push("engineering");
+  pedro.catalogs.faculty[0].primary_academic_home_id = "heinz";
+  pedro.catalogs.faculty[0].primary_academic_home_title = "Heinz College";
+  pedro.catalogs.faculty[0].primary_academic_home_school_id = "heinz";
+  assert.equal(core.parseArtifact(pedro).catalogs.faculty[0].memberships.length, 2);
+
+  const institute = structuredClone(source);
+  institute.catalogs.faculty[0].memberships = [{ department_id: "hcii", role: "faculty" }];
+  institute.catalogs.faculty[0].school_ids = ["scs"];
+  Object.assign(institute.catalogs.faculty[0], {
+    primary_academic_home_type: "institute",
+    primary_academic_home_id: "hcii",
+    primary_academic_home_title: "Human-Computer Interaction Institute",
+    primary_academic_home_school_id: "scs",
+  });
+  assert.equal(core.parseArtifact(institute).catalogs.faculty[0].primary_academic_home_type, "institute");
+
+  const constituent = structuredClone(source);
+  constituent.catalogs.faculty[0].memberships = [{ department_id: "heinz-ism", role: "faculty" }];
+  constituent.catalogs.faculty[0].school_ids = ["heinz"];
+  Object.assign(constituent.catalogs.faculty[0], {
+    primary_academic_home_type: "constituent_school",
+    primary_academic_home_id: "heinz-ism",
+    primary_academic_home_title: "School of Information Systems and Management",
+    primary_academic_home_school_id: "heinz",
+  });
+  assert.equal(core.parseArtifact(constituent).catalogs.faculty[0].primary_academic_home_type, "constituent_school");
+
+  const area = structuredClone(source);
+  Object.assign(area.catalogs.faculty[0], {
+    primary_academic_home_type: "academic_area",
+    primary_academic_home_id: "tepper:operations",
+    primary_academic_home_title: "Operations Research",
+  });
+  assert.equal(core.parseArtifact(area).catalogs.faculty[0].primary_academic_home_id, "tepper:operations");
+
+  const africa = structuredClone(source);
+  africa.catalogs.faculty[0].memberships = [{ department_id: "cmu-africa", role: "faculty" }];
+  africa.catalogs.faculty[0].school_ids = ["engineering"];
+  Object.assign(africa.catalogs.faculty[0], {
+    primary_department_id: "cmu-africa",
+    primary_academic_home_type: "department",
+    primary_academic_home_id: "cmu-africa",
+    primary_academic_home_title: "CMU-Africa",
+    primary_academic_home_school_id: "engineering",
+  });
+  assert.equal(core.parseArtifact(africa).catalogs.faculty[0].primary_department_id, "cmu-africa");
+
+  const unresolved = structuredClone(source);
+  Object.assign(unresolved.catalogs.faculty[0], {
+    primary_academic_home_type: "unresolved",
+    primary_academic_home_id: "",
+    primary_academic_home_title: "",
+    primary_academic_home_school_id: "",
+    primary_academic_home_source_url: "",
+    primary_academic_home_verified_at: "",
+    primary_academic_home_basis: "unresolved",
+  });
+  assert.equal(core.parseArtifact(unresolved).catalogs.faculty[0].primary_academic_home_type, "unresolved");
+
+  const wrongSchool = structuredClone(source);
+  wrongSchool.catalogs.faculty[0].primary_academic_home_school_id = "heinz";
+  assert.throws(() => core.parseArtifact(wrongSchool), /invalid primary academic home/);
+  const notIncluded = structuredClone(source);
+  notIncluded.catalogs.faculty[0].memberships[0].included = false;
+  assert.throws(() => core.parseArtifact(notIncluded), /outside included memberships/);
+  const legacyConflict = structuredClone(source);
+  legacyConflict.catalogs.faculty[0].primary_department_id = "tepper-faculty";
+  assert.throws(() => core.parseArtifact(legacyConflict), /conflicting legacy primary department/);
+  const falseDepartment = structuredClone(source);
+  falseDepartment.catalogs.faculty[0].primary_academic_home_type = "department";
+  falseDepartment.catalogs.faculty[0].primary_academic_home_id = "tepper-faculty";
+  assert.throws(() => core.parseArtifact(falseDepartment), /outside included memberships/);
+  const falseInstitute = structuredClone(institute);
+  falseInstitute.catalogs.faculty[0].primary_academic_home_type = "department";
+  assert.throws(() => core.parseArtifact(falseInstitute), /outside included memberships/);
+});
+
 test("bad rows are omitted without allowing them to reserve a work id", () => {
   const source = makeArtifact();
   const validCopy = { ...source.points[0] };
