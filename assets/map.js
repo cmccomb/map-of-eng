@@ -306,6 +306,7 @@ function publicationTypeLabel(point) {
     patent: "Patent",
     edited_book: "Edited book",
     panel_transcript: "Panel transcript",
+    conference_presentation: "Conference presentation",
   }[point.publication_type] || "Publication";
 }
 

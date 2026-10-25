@@ -177,6 +177,11 @@ test("artifact parser preserves reviewed publication context and sanitizes evide
   const withoutInvalidContext = core.parseArtifact(source);
   assert.equal(withoutInvalidContext.points.length, source.points.length - 1);
   assert.equal(withoutInvalidContext.omitted_point_count, 1);
+
+  source.points[0].publication_type = "conference_presentation";
+  const withPresentation = core.parseArtifact(source);
+  assert.equal(withPresentation.omitted_point_count, 0);
+  assert.equal(withPresentation.points[0].publication_type, "conference_presentation");
 });
 
 test("artifact parser preserves the school hierarchy and validates school IDs", () => {
