@@ -263,6 +263,7 @@ test("faculty search labels school, institute, and campus-approved homes without
     { department_id: "heinz-ism", school_id: "heinz", title: "School of Information Systems and Management", unit_type: "constituent_school", publication_count: 0 },
     { department_id: "hcii", school_id: "scs", title: "Human-Computer Interaction Institute", unit_type: "institute", publication_count: 0 },
     { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa", unit_type: "department", publication_count: 0 },
+    { department_id: "cmu-silicon-valley", school_id: "engineering", title: "CMU Silicon Valley", unit_type: "campus", publication_count: 0 },
   );
   const [tepper, pedro, institute, africa, unresolved] = artifact.catalogs.faculty;
   const home = (person, type, id, title, schoolId) => Object.assign(person, {
@@ -313,7 +314,15 @@ test("faculty search labels school, institute, and campus-approved homes without
     memberships: [{ department_id: "tepper-faculty", role: "faculty" }],
   };
   home(area, "academic_area", "tepper:operations", "Operations Research", "tepper");
-  artifact.catalogs.faculty.push(constituent, area);
+  const campus = {
+    person_id: "f-campus",
+    display_name: "Karimulla Shaikh",
+    publication_count: 0,
+    school_ids: ["engineering"],
+    memberships: [{ department_id: "cmu-silicon-valley", role: "teaching" }],
+  };
+  home(campus, "campus", "cmu-silicon-valley", "CMU Silicon Valley", "engineering");
+  artifact.catalogs.faculty.push(constituent, area, campus);
   await openMap(page, artifact);
 
   const search = page.locator("#author-search");
@@ -325,6 +334,7 @@ test("faculty search labels school, institute, and campus-approved homes without
     ["Erin", "Primary academic home unresolved"],
     ["Isabel", "Primary constituent school: School of Information Systems and Management"],
     ["Ari", "Primary academic area: Operations Research"],
+    ["Karimulla", "Primary campus: CMU Silicon Valley"],
   ]) {
     await search.fill(name);
     await expect(page.locator("#author-suggestions")).toContainText(expected);

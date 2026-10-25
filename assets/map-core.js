@@ -20,6 +20,7 @@
   const DATASET_ID_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
   const PRIMARY_HOME_TYPES = new Set([
     "department",
+    "campus",
     "constituent_school",
     "institute",
     "academic_area",

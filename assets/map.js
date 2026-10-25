@@ -359,6 +359,7 @@ function facultyPrimaryDetail(person) {
   }
   const label = {
     department: "Primary department",
+    campus: "Primary campus",
     institute: "Primary institute",
     constituent_school: "Primary constituent school",
     academic_area: "Primary academic area",
