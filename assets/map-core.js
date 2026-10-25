@@ -20,6 +20,7 @@
   const DATASET_ID_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
   const PRIMARY_HOME_TYPES = new Set([
     "department",
+    "campus",
     "constituent_school",
     "institute",
     "academic_area",
@@ -686,6 +687,18 @@
             !includedMembershipIds.has(homeId)
           ) {
             throw new ArtifactError(`faculty[${index}] has a primary academic home outside included memberships`);
+          }
+          if (
+            homeType === "campus" &&
+            Array.isArray(person.memberships) &&
+            person.memberships.some((membership) => {
+              if (!membership || membership.included === false) return false;
+              const unit = departmentById.get(membership.department_id);
+              return unit && !ROSTER_CONTAINER_IDS.has(membership.department_id) &&
+                (!unit.unit_type || ["department", "constituent_school", "institute"].includes(unit.unit_type));
+            })
+          ) {
+            throw new ArtifactError(`faculty[${index}] campus home requires no included academic unit`);
           }
           if (primaryDepartmentId && (homeType !== "department" || primaryDepartmentId !== homeId)) {
             throw new ArtifactError(`faculty[${index}] has a conflicting legacy primary department`);

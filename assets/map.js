@@ -360,6 +360,7 @@ function facultyPrimaryDetail(person) {
   const tieBreak = home.basis === "display_tie_break_first_listed";
   const label = tieBreak ? "Display department" : ({
     department: "Primary department",
+    campus: "Primary campus",
     institute: "Primary institute",
     constituent_school: "Primary constituent school",
     academic_area: "Primary academic area",

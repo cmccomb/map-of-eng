@@ -344,6 +344,63 @@ test("typed primary homes validate their school and included role without changi
   assert.throws(() => core.parseArtifact(falseInstitute), /outside included memberships/);
 });
 
+test("a campus primary home accepts an included teaching membership and keeps its school", () => {
+  const source = makeSchoolArtifact();
+  source.catalogs.departments.push({
+    department_id: "cmu-silicon-valley",
+    school_id: "engineering",
+    title: "CMU Silicon Valley",
+    unit_type: "campus",
+    publication_count: 0,
+  });
+  const person = source.catalogs.faculty[0];
+  person.memberships = [{ department_id: "cmu-silicon-valley", role: "teaching" }];
+  Object.assign(person, {
+    primary_department_id: "",
+    primary_academic_home_type: "campus",
+    primary_academic_home_id: "cmu-silicon-valley",
+    primary_academic_home_title: "CMU Silicon Valley",
+    primary_academic_home_school_id: "engineering",
+    primary_academic_home_source_url: "https://www.cmu.edu/silicon-valley/",
+    primary_academic_home_verified_at: "2026-10-24",
+    primary_academic_home_basis: "reviewed",
+  });
+  const parsed = core.parseArtifact(source).catalogs.faculty[0];
+  assert.equal(parsed.primary_academic_home_type, "campus");
+  assert.equal(parsed.primary_department_id, "");
+  assert.deepEqual(parsed.school_ids, ["engineering"]);
+  assert.deepEqual(parsed.memberships, person.memberships);
+
+  const academicMembership = structuredClone(source);
+  academicMembership.catalogs.faculty[0].memberships.push({
+    department_id: "d-me",
+    role: "faculty",
+    included: true,
+  });
+  assert.throws(() => core.parseArtifact(academicMembership), /campus home requires no included academic unit/);
+  const typedAcademicMembership = structuredClone(academicMembership);
+  typedAcademicMembership.catalogs.departments.find((unit) => unit.department_id === "d-me").unit_type = "department";
+  assert.throws(() => core.parseArtifact(typedAcademicMembership), /campus home requires no included academic unit/);
+  academicMembership.catalogs.faculty[0].memberships.at(-1).included = false;
+  assert.equal(core.parseArtifact(academicMembership).catalogs.faculty[0].primary_academic_home_type, "campus");
+
+  const wrongType = structuredClone(source);
+  wrongType.catalogs.departments.at(-1).unit_type = "department";
+  assert.throws(() => core.parseArtifact(wrongType), /outside included memberships/);
+  const wrongSchool = structuredClone(source);
+  wrongSchool.catalogs.faculty[0].primary_academic_home_school_id = "scs";
+  assert.throws(() => core.parseArtifact(wrongSchool), /outside included memberships/);
+  const excluded = structuredClone(source);
+  excluded.catalogs.faculty[0].memberships[0].included = false;
+  assert.throws(() => core.parseArtifact(excluded), /outside included memberships/);
+  const ineligibleRole = structuredClone(source);
+  ineligibleRole.catalogs.faculty[0].memberships[0].role = "affiliate";
+  assert.throws(() => core.parseArtifact(ineligibleRole), /outside included memberships/);
+  const legacyConflict = structuredClone(source);
+  legacyConflict.catalogs.faculty[0].primary_department_id = "cmu-silicon-valley";
+  assert.throws(() => core.parseArtifact(legacyConflict), /conflicting legacy primary department/);
+});
+
 test("bad rows are omitted without allowing them to reserve a work id", () => {
   const source = makeArtifact();
   const validCopy = { ...source.points[0] };
