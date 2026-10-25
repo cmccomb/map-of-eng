@@ -196,6 +196,89 @@ test("zero-work faculty and departments remain selectable with clear coverage st
   await expect(page.locator("#empty-copy")).toContainText("No publications are mapped to this department yet");
 });
 
+test("Math faculty without a Scholar account keep a visible coverage note", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  artifact.catalogs.schools.push({
+    school_id: "mcs",
+    title: "Mellon College of Science",
+    publication_count: 4,
+  });
+  artifact.catalogs.departments.push({
+    department_id: "math",
+    title: "Mathematical Sciences",
+    school_id: "mcs",
+    publication_count: 4,
+  });
+  artifact.catalogs.faculty.push(
+    {
+      person_id: "f-shlomo",
+      display_name: "Shlomo Ta'asan",
+      scholar_id: "",
+      memberships: [{ department_id: "math", role: "faculty" }],
+      school_ids: ["mcs"],
+      publication_count: 3,
+    },
+    {
+      person_id: "f-verified-math",
+      display_name: "Verified Math Faculty",
+      scholar_id: "exampleAAAAJ",
+      memberships: [{ department_id: "math", role: "faculty" }],
+      school_ids: ["mcs"],
+      publication_count: 1,
+    },
+  );
+  artifact.catalogs.faculty.find((person) => person.person_id === "f-erin").memberships = [
+    { department_id: "d-csd", role: "faculty" },
+  ];
+  for (const [index, personId] of [
+    "f-shlomo",
+    "f-shlomo",
+    "f-shlomo",
+    "f-verified-math",
+  ].entries()) {
+    artifact.points.push({
+      ...artifact.points[index],
+      work_id: `math-${index}`,
+      faculty_ids: [personId],
+      department_ids: ["math"],
+      school_ids: ["mcs"],
+    });
+  }
+  artifact.point_count = artifact.points.length;
+  await openMap(page, artifact);
+
+  const search = page.locator("#author-search");
+  const note = page.locator("#faculty-coverage-note");
+  await search.fill("Shlomo");
+  await expect(page.locator("#author-suggestions")).toContainText("3 mapped works");
+  await search.press("Enter");
+  await expect(note).toHaveText(
+    "Shlomo Ta'asan: Scholar account unresolved; mapped works are observed records, not a complete publication history.",
+  );
+  await expect(note).toBeVisible();
+  await page.reload();
+  await expect(note).toBeVisible();
+  await expect(note).toContainText("Scholar account unresolved");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("#toggle-filters").click();
+  await expect(note).toBeVisible();
+  const mobileWidth = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(mobileWidth.document).toBeLessThanOrEqual(mobileWidth.viewport);
+
+  await page.locator("#selected-authors button").click();
+  await expect(note).toBeHidden();
+  await search.fill("Verified Math");
+  await search.press("Enter");
+  await expect(note).toBeHidden();
+  await page.locator("#selected-authors button").click();
+  await search.fill("Erin Ellis");
+  await search.press("Enter");
+  await expect(note).toBeHidden();
+});
+
 test("faculty search shows the supported primary and retains secondary department filters", async ({ page }) => {
   const artifact = makeSchoolArtifact();
   artifact.catalogs.faculty[0].memberships = [
@@ -632,7 +715,7 @@ test("topic and year filters use contextual counts and survive a permalink reloa
   const authorSearch = page.locator("#author-search");
   await authorSearch.fill("Alice");
   await expect(
-    page.getByRole("option", { name: "Alice Adams 1 works" }),
+    page.getByRole("option", { name: "Alice Adams 1 mapped work" }),
   ).toBeVisible();
   await authorSearch.press("Escape");
 

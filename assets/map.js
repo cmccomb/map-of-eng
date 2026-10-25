@@ -185,6 +185,7 @@ const topicSelectionNote = document.querySelector("#topic-selection-note");
 const authorSearch = document.querySelector("#author-search");
 const authorSuggestions = document.querySelector("#author-suggestions");
 const selectedAuthors = document.querySelector("#selected-authors");
+const facultyCoverageNote = document.querySelector("#faculty-coverage-note");
 const schoolField = document.querySelector("#school-field");
 const schoolSearch = document.querySelector("#school-search");
 const schoolSuggestions = document.querySelector("#school-suggestions");
@@ -404,6 +405,25 @@ function facultyPrimaryDetail(person) {
   return `${label}: ${home.title}${inference}${
     otherHomes.length ? ` · Also: ${otherHomes.join(", ")}` : ""
   }`;
+}
+
+function updateFacultyCoverageNote() {
+  const unresolvedMathFaculty = [...state.activeFaculty]
+    .map((id) => state.facultyById.get(id))
+    .filter((person) =>
+      person &&
+      !String(person.scholar_id || "").trim() &&
+      Array.isArray(person.memberships) &&
+      person.memberships.some((membership) =>
+        membership?.department_id === "math" &&
+        membership.included !== false &&
+        ["faculty", "teaching", "emeritus"].includes(membership.role),
+      ),
+    );
+  facultyCoverageNote.hidden = unresolvedMathFaculty.length === 0;
+  facultyCoverageNote.textContent = unresolvedMathFaculty.length
+    ? `${unresolvedMathFaculty.map((person) => person.display_name).join(", ")}: Scholar account unresolved; mapped works are observed records, not a complete publication history.`
+    : "";
 }
 
 function keywordPath(keyword) {
@@ -1899,6 +1919,8 @@ function createMultiSelect({
   itemCount,
   itemAvailable = () => true,
   selectedLabel = itemLabel,
+  onSelectionChange = () => {},
+  mappedWorkCounts = false,
   showAllOnEmpty = false,
   suggestionLimit = 8,
 }) {
@@ -1982,10 +2004,10 @@ function createMultiSelect({
       const count = document.createElement("small");
       const workCount = Number(itemCount(item) || 0);
       count.textContent = workCount
-        ? `${workCount.toLocaleString()} works`
+        ? `${workCount.toLocaleString()} ${mappedWorkCounts ? "mapped " : ""}work${workCount === 1 ? "" : "s"}`
         : Number(item.publication_count) === 0
           ? "0 mapped works"
-          : "0 matching works";
+          : `0 matching ${mappedWorkCounts ? "mapped works" : "works"}`;
       if (detail) {
         const text = document.createElement("span");
         text.className = "suggestion-text";
@@ -2026,6 +2048,7 @@ function createMultiSelect({
       button.append(name, close);
       selectedList.append(button);
     }
+    onSelectionChange();
   }
 
   function addItem(id, { focus = true } = {}) {
@@ -2186,6 +2209,8 @@ const authorFilter = createMultiSelect({
   itemId: (person) => person.person_id,
   itemLabel: (person) => person.display_name,
   itemDetail: facultyPrimaryDetail,
+  onSelectionChange: updateFacultyCoverageNote,
+  mappedWorkCounts: true,
   itemCount: (person) =>
     state.facetCounts.facultyCounts.get(person.person_id) || 0,
   selectedLabel: (person) => {

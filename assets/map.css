@@ -634,6 +634,16 @@ select:focus {
   line-height: 1.4;
 }
 
+.faculty-coverage-note {
+  margin: 0.35rem 0 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0.3rem;
+  background: var(--chip);
+  color: var(--text);
+  font-size: 0.74rem;
+}
+
 .color-note {
   margin: 0.5rem 0 0;
 }
