@@ -251,6 +251,37 @@ test("faculty search shows the supported primary and retains secondary departmen
   );
 });
 
+test("joint faculty show a display tie-break without claiming an institutional primary", async ({ page }) => {
+  const artifact = makeSchoolArtifact();
+  const person = artifact.catalogs.faculty[0];
+  person.memberships = [
+    { department_id: "d-me", role: "faculty" },
+    { department_id: "d-bme", role: "faculty" },
+  ];
+  Object.assign(person, {
+    primary_department_id: "d-me",
+    primary_academic_home_type: "department",
+    primary_academic_home_id: "d-me",
+    primary_academic_home_title: "Mechanical Engineering",
+    primary_academic_home_school_id: "engineering",
+    primary_academic_home_source_url: "https://example.org/faculty-profile",
+    primary_academic_home_verified_at: "2026-10-24",
+    primary_academic_home_basis: "display_tie_break_first_listed",
+  });
+  await openMap(page, artifact);
+
+  const search = page.locator("#author-search");
+  await search.fill("Alice");
+  await expect(page.locator("#author-suggestions")).toContainText(
+    "Display department: Mechanical Engineering (display tie-break: first-listed department) · Also: Biomedical Engineering",
+  );
+  await expect(page.locator("#author-suggestions")).not.toContainText("Primary department");
+  await search.press("Enter");
+  await expect(page.locator("#selected-authors")).toContainText(
+    "Alice Adams · Mechanical Engineering (display tie-break: first-listed department)",
+  );
+});
+
 test("faculty search labels school, institute, and campus-approved homes without roster-container titles", async ({ page }) => {
   const artifact = makeSchoolArtifact();
   artifact.catalogs.schools.push(

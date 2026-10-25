@@ -307,6 +307,13 @@ test("typed primary homes validate their school and included role without changi
   });
   assert.equal(core.parseArtifact(africa).catalogs.faculty[0].primary_department_id, "cmu-africa");
 
+  const joint = structuredClone(africa);
+  joint.catalogs.faculty[0].memberships.push({ department_id: "d-me", role: "faculty" });
+  joint.catalogs.faculty[0].primary_academic_home_basis = "display_tie_break_first_listed";
+  const parsedJoint = core.parseArtifact(joint).catalogs.faculty[0];
+  assert.equal(parsedJoint.primary_academic_home_basis, "display_tie_break_first_listed");
+  assert.deepEqual(parsedJoint.memberships, joint.catalogs.faculty[0].memberships);
+
   const unresolved = structuredClone(source);
   Object.assign(unresolved.catalogs.faculty[0], {
     primary_academic_home_type: "unresolved",

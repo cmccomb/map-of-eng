@@ -357,16 +357,19 @@ function facultyPrimaryDetail(person) {
       ? "Primary academic home unresolved"
       : "";
   }
-  const label = {
+  const tieBreak = home.basis === "display_tie_break_first_listed";
+  const label = tieBreak ? "Display department" : ({
     department: "Primary department",
     campus: "Primary campus",
     institute: "Primary institute",
     constituent_school: "Primary constituent school",
     academic_area: "Primary academic area",
     school: "Primary school",
-  }[home.type] || "Primary academic home";
+  }[home.type] || "Primary academic home");
   const basis = home.basis;
-  const inference = basis === "inferred_advisee_count"
+  const inference = tieBreak
+    ? " (display tie-break: first-listed department)"
+    : basis === "inferred_advisee_count"
     ? " (inferred from PhD students)"
     : basis === "inferred_profile_title"
       ? " (inferred from faculty title)"
@@ -2192,7 +2195,9 @@ const authorFilter = createMultiSelect({
     );
     return home
       ? `${person.display_name} · ${home.title}${
-          inferred ? " (inferred)" : ""
+          home.basis === "display_tie_break_first_listed"
+            ? " (display tie-break: first-listed department)"
+            : inferred ? " (inferred)" : ""
         }`
       : person.display_name;
   },
