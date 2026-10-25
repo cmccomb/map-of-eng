@@ -502,6 +502,32 @@ test("publication details disclose a separately verified record", async ({ page 
   );
 });
 
+test("reviewed context labels contributors and links source evidence", async ({ page }) => {
+  const artifact = makeArtifact();
+  for (const point of artifact.points) {
+    point.publication_type = "patent";
+    point.context_evidence_urls = ["https://patents.google.com/patent/US6486123B1/en"];
+  }
+  await openMap(page, artifact);
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-meta")).toContainText("Patent ·");
+  await expect(page.locator("#detail-contributors-label")).toHaveText("Inventors");
+  await expect(page.locator("#detail-verification-link")).toHaveAttribute(
+    "href", "https://patents.google.com/patent/US6486123B1/en",
+  );
+
+  await page.locator("#open-results").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-results").click();
+  const download = await downloadPromise;
+  const csv = fs.readFileSync(await download.path(), "utf8");
+  expect(csv).toContain('"Publication type","Contributors"');
+  expect(csv).toContain(',"Patent",');
+});
+
 test("reports determinate progress while publication data streams", async ({
   page,
 }) => {

@@ -217,6 +217,7 @@ const detailPanel = document.querySelector("#detail-panel");
 const detailTitle = document.querySelector("#detail-title");
 const detailMeta = document.querySelector("#detail-meta");
 const detailProvenance = document.querySelector("#detail-provenance");
+const detailContributorsLabel = document.querySelector("#detail-contributors-label");
 const detailAuthors = document.querySelector("#detail-authors");
 const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
@@ -298,6 +299,22 @@ function facultyNames(point) {
 function curatedOnly(point) {
   return point.source_types.includes("curated_verified") &&
     !point.source_types.includes("scholar");
+}
+
+function publicationTypeLabel(point) {
+  return {
+    patent: "Patent",
+    edited_book: "Edited book",
+    panel_transcript: "Panel transcript",
+  }[point.publication_type] || "Publication";
+}
+
+function contributorLabel(point) {
+  return {
+    patent: "Inventors",
+    edited_book: "Editors",
+    panel_transcript: "Participants",
+  }[point.publication_type] || "Authors";
 }
 
 function citationText(point) {
@@ -1551,7 +1568,8 @@ function exportResultsCsv() {
   if (!state.matchedPoints.length) return;
   const headings = [
     "Title",
-    "Authors",
+    "Publication type",
+    "Contributors",
     "Year",
     "Venue",
     "Citations",
@@ -1562,6 +1580,7 @@ function exportResultsCsv() {
   ];
   const rows = state.matchedPoints.map((point) => [
     point.title,
+    publicationTypeLabel(point),
     point.authors,
     point.year || "",
     point.venue,
@@ -2378,12 +2397,15 @@ function showDetails(point) {
   const observations = Number(point.observation_count || 1).toLocaleString();
   const curated = point.source_types.includes("curated_verified");
   const scholar = point.source_types.includes("scholar");
-  detailMeta.textContent = `${year} · ${venue} · ${citationText(point)} · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
+  const typePrefix = point.publication_type === "publication"
+    ? "" : `${publicationTypeLabel(point)} · `;
+  detailMeta.textContent = `${typePrefix}${year} · ${venue} · ${citationText(point)} · ${observations} source observation${Number(point.observation_count || 1) === 1 ? "" : "s"}`;
   detailProvenance.hidden = !point.source_types.length;
   detailProvenance.textContent = curated
     ? `${scholar ? "Google Scholar and " : ""}verified CMU/publisher record${scholar ? "" : " · not collected from Google Scholar"}${point.source_verified_at ? ` · checked ${point.source_verified_at}` : ""}`
     : "Google Scholar profile record";
-  detailAuthors.textContent = point.authors || "Author list unavailable";
+  detailContributorsLabel.textContent = contributorLabel(point);
+  detailAuthors.textContent = point.authors || `${contributorLabel(point)} unavailable`;
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
   detailKeyword.textContent = curated && !scholar
@@ -2402,10 +2424,13 @@ function showDetails(point) {
     detailLink.removeAttribute("href");
     detailLink.hidden = true;
   }
-  const separateVerificationUrl = point.source_verification_urls.find(
+  const contextVerificationUrl = point.context_evidence_urls.find(
     (url) => url !== point.source_url,
   );
-  if (curated && separateVerificationUrl) {
+  const separateVerificationUrl = contextVerificationUrl || point.source_verification_urls.find(
+    (url) => url !== point.source_url,
+  );
+  if ((curated || contextVerificationUrl) && separateVerificationUrl) {
     detailVerificationLink.href = separateVerificationUrl;
     detailVerificationLink.hidden = false;
   } else {
