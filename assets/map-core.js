@@ -483,6 +483,11 @@
         keywordIds = [legacyKeywordId];
       }
     }
+    const publicationType = point.publication_type === undefined
+      ? "publication" : String(point.publication_type);
+    if (!["publication", "patent", "edited_book", "panel_transcript"].includes(publicationType)) {
+      throw new ArtifactError(`points[${index}].publication_type is invalid`);
+    }
     const parsed = {
       ...point,
       work_id: workId,
@@ -490,6 +495,12 @@
         maxLength: 5000,
       }),
       authors: optionalString(point.authors, { maxLength: 10000 }),
+      publication_type: publicationType,
+      source_document_id: optionalString(point.source_document_id, { maxLength: 100 }),
+      display_contributors: optionalString(point.display_contributors, { maxLength: 10000 }),
+      context_evidence_urls: Array.isArray(point.context_evidence_urls)
+        ? [...new Set(point.context_evidence_urls.map(safeHttpUrl).filter(Boolean))]
+        : [],
       school_ids: schoolIds
         ? knownIdArray(point.school_ids, schoolIds, `points[${index}].school_ids`, {
             allowEmpty: false,

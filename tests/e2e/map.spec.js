@@ -502,6 +502,56 @@ test("publication details disclose a separately verified record", async ({ page 
   );
 });
 
+test("reviewed context labels contributors and links source evidence", async ({ page }) => {
+  const artifact = makeArtifact();
+  for (const point of artifact.points) {
+    point.publication_type = "patent";
+    point.context_evidence_urls = ["https://patents.google.com/patent/US6486123B1/en"];
+  }
+  await openMap(page, artifact);
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-meta")).toContainText("Patent ·");
+  await expect(page.locator("#detail-contributors-label")).toHaveText("Inventors");
+  await expect(page.locator("#detail-verification-link")).toHaveAttribute(
+    "href", "https://patents.google.com/patent/US6486123B1/en",
+  );
+
+  await page.locator("#open-results").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-results").click();
+  const download = await downloadPromise;
+  const csv = fs.readFileSync(await download.path(), "utf8");
+  expect(csv).toContain('"Publication type","Contributors"');
+  expect(csv).toContain(',"Patent",');
+});
+
+test("edited book shows source-verified editors", async ({ page }) => {
+  const artifact = makeArtifact();
+  const editors = "C. Ho; W. A. Eaton; J. P. Collman; Q. H. Gibson; J. S. Leigh, Jr.; E. Margoliash; K. Moffat; W. R. Scheidt";
+  for (const point of artifact.points) {
+    point.publication_type = "edited_book";
+    point.display_contributors = editors;
+    point.context_evidence_urls = ["https://www.cmu.edu/bio/people/faculty/images/ho_publications.pdf"];
+  }
+  await openMap(page, artifact);
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-contributors-label")).toHaveText("Editors");
+  await expect(page.locator("#detail-authors")).toHaveText(editors);
+
+  await page.locator("#open-results").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-results").click();
+  const csv = fs.readFileSync(await (await downloadPromise).path(), "utf8");
+  expect(csv).toContain('"Publication type","Contributors"');
+  expect(csv).toContain(editors);
+});
+
 test("reports determinate progress while publication data streams", async ({
   page,
 }) => {
@@ -768,6 +818,7 @@ test("results surface summarizes, sorts, exports, and remains accessible", async
   );
   const downloadPath = await download.path();
   const csv = fs.readFileSync(downloadPath, "utf8");
+  expect(csv).toContain('"Title","Authors","Year"');
   expect(csv).toContain("Robotic Grasp Planning");
   expect(csv).toContain("Topic path");
 });

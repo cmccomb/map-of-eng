@@ -152,6 +152,33 @@ test("artifact parser preserves verified-work provenance without unsafe links", 
   assert.equal(legacy.source_verified_at, "");
 });
 
+test("artifact parser preserves reviewed publication context and sanitizes evidence", () => {
+  const source = makeArtifact();
+  source.points[0].publication_type = "patent";
+  source.points[0].source_document_id = "US6486123B1";
+  source.points[0].display_contributors = "C. Ho; W. A. Eaton";
+  source.points[0].context_evidence_urls = [
+    "https://patents.google.com/patent/US6486123B1/en",
+    "javascript:alert(1)",
+    "https://patents.google.com/patent/US6486123B1/en",
+  ];
+  const points = core.parseArtifact(source).points;
+  assert.equal(points[0].publication_type, "patent");
+  assert.equal(points[0].source_document_id, "US6486123B1");
+  assert.equal(points[0].display_contributors, "C. Ho; W. A. Eaton");
+  assert.deepEqual(points[0].context_evidence_urls, [
+    "https://patents.google.com/patent/US6486123B1/en",
+  ]);
+  assert.equal(points[1].publication_type, "publication");
+  assert.equal(points[1].display_contributors, "");
+  assert.deepEqual(points[1].context_evidence_urls, []);
+
+  source.points[0].publication_type = "withdrawn_article";
+  const withoutInvalidContext = core.parseArtifact(source);
+  assert.equal(withoutInvalidContext.points.length, source.points.length - 1);
+  assert.equal(withoutInvalidContext.omitted_point_count, 1);
+});
+
 test("artifact parser preserves the school hierarchy and validates school IDs", () => {
   const parsed = core.parseArtifact(makeSchoolArtifact());
   assert.deepEqual(parsed.catalogs.schools.map((school) => school.school_id), ["engineering", "scs"]);
