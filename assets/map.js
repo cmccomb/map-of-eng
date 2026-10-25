@@ -1566,10 +1566,12 @@ function csvCell(value) {
 
 function exportResultsCsv() {
   if (!state.matchedPoints.length) return;
+  const hasReviewedContext = state.matchedPoints.some(
+    (point) => point.publication_type !== "publication",
+  );
   const headings = [
     "Title",
-    "Publication type",
-    "Contributors",
+    ...(hasReviewedContext ? ["Publication type", "Contributors"] : ["Authors"]),
     "Year",
     "Venue",
     "Citations",
@@ -1580,8 +1582,9 @@ function exportResultsCsv() {
   ];
   const rows = state.matchedPoints.map((point) => [
     point.title,
-    publicationTypeLabel(point),
-    point.authors,
+    ...(hasReviewedContext
+      ? [publicationTypeLabel(point), point.display_contributors || point.authors]
+      : [point.authors]),
     point.year || "",
     point.venue,
     Number(point.citation_count) || 0,
@@ -2405,7 +2408,8 @@ function showDetails(point) {
     ? `${scholar ? "Google Scholar and " : ""}verified CMU/publisher record${scholar ? "" : " · not collected from Google Scholar"}${point.source_verified_at ? ` · checked ${point.source_verified_at}` : ""}`
     : "Google Scholar profile record";
   detailContributorsLabel.textContent = contributorLabel(point);
-  detailAuthors.textContent = point.authors || `${contributorLabel(point)} unavailable`;
+  detailAuthors.textContent = point.display_contributors || point.authors
+    || `${contributorLabel(point)} unavailable`;
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
   detailKeyword.textContent = curated && !scholar

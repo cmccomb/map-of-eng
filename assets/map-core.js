@@ -497,6 +497,7 @@
       authors: optionalString(point.authors, { maxLength: 10000 }),
       publication_type: publicationType,
       source_document_id: optionalString(point.source_document_id, { maxLength: 100 }),
+      display_contributors: optionalString(point.display_contributors, { maxLength: 10000 }),
       context_evidence_urls: Array.isArray(point.context_evidence_urls)
         ? [...new Set(point.context_evidence_urls.map(safeHttpUrl).filter(Boolean))]
         : [],
