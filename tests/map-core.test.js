@@ -371,6 +371,19 @@ test("a campus primary home accepts an included teaching membership and keeps it
   assert.deepEqual(parsed.school_ids, ["engineering"]);
   assert.deepEqual(parsed.memberships, person.memberships);
 
+  const academicMembership = structuredClone(source);
+  academicMembership.catalogs.faculty[0].memberships.push({
+    department_id: "d-me",
+    role: "faculty",
+    included: true,
+  });
+  assert.throws(() => core.parseArtifact(academicMembership), /campus home requires no included academic unit/);
+  const typedAcademicMembership = structuredClone(academicMembership);
+  typedAcademicMembership.catalogs.departments.find((unit) => unit.department_id === "d-me").unit_type = "department";
+  assert.throws(() => core.parseArtifact(typedAcademicMembership), /campus home requires no included academic unit/);
+  academicMembership.catalogs.faculty[0].memberships.at(-1).included = false;
+  assert.equal(core.parseArtifact(academicMembership).catalogs.faculty[0].primary_academic_home_type, "campus");
+
   const wrongType = structuredClone(source);
   wrongType.catalogs.departments.at(-1).unit_type = "department";
   assert.throws(() => core.parseArtifact(wrongType), /outside included memberships/);
