@@ -219,7 +219,6 @@ const detailProvenance = document.querySelector("#detail-provenance");
 const detailAuthors = document.querySelector("#detail-authors");
 const detailFaculty = document.querySelector("#detail-faculty");
 const detailDepartments = document.querySelector("#detail-departments");
-const detailKeyword = document.querySelector("#detail-keyword");
 const detailLink = document.querySelector("#detail-link");
 const detailVerificationLink = document.querySelector("#detail-verification-link");
 const closeDetail = document.querySelector("#close-detail");
@@ -1536,7 +1535,7 @@ function exportResultsCsv() {
     "Citations",
     "CMU faculty",
     "Departments",
-    "Topic path",
+    "Map region path",
     "Source",
   ];
   const rows = state.matchedPoints.map((point) => [
@@ -2360,12 +2359,6 @@ function showDetails(point) {
   detailAuthors.textContent = point.authors || "Author list unavailable";
   detailFaculty.textContent = facultyNames(point).join(", ") || "Unavailable";
   detailDepartments.textContent = departmentNames(point).join(" · ");
-  detailKeyword.textContent = curated && !scholar
-    ? "Automated topic not reviewed for this verified record"
-    : point.keyword_ids
-      .map((keywordId) => state.keywordById.get(keywordId)?.label)
-      .filter(Boolean)
-      .join(" › ") || "Unavailable";
   if (point.source_url) {
     detailLink.href = point.source_url;
     detailLink.hidden = false;
