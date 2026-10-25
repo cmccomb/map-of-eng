@@ -394,9 +394,7 @@ test("publication details disclose a separately verified record", async ({ page 
     "not collected from Google Scholar",
   );
   await expect(page.locator("#detail-meta")).toContainText("citation count unavailable");
-  await expect(page.locator("#detail-keyword")).toHaveText(
-    "Automated topic not reviewed for this verified record",
-  );
+  await expect(page.locator("#detail-panel")).not.toContainText("Topic keywords");
   await expect(page.locator("#detail-verification-link")).toHaveAttribute(
     "href",
     "https://www.cmu.edu/math/people/faculty/tetali.html",
@@ -676,7 +674,7 @@ test("results surface summarizes, sorts, exports, and remains accessible", async
   const downloadPath = await download.path();
   const csv = fs.readFileSync(downloadPath, "utf8");
   expect(csv).toContain("Robotic Grasp Planning");
-  expect(csv).toContain("Topic path");
+  expect(csv).toContain("Map region path");
 });
 
 test("zoom to matches trims spatial outliers and can restore every match", async ({
@@ -877,9 +875,7 @@ test("topic keywords annotate the map and dot sizing reveals age or impact", asy
 
   await canvas.focus();
   await canvas.press("Enter");
-  await expect(page.locator("#detail-keyword")).toHaveText(
-    /robotic design|energy systems|biomedical interfaces.*›/,
-  );
+  await expect(page.locator("#detail-panel")).not.toContainText("Topic keywords");
 });
 
 test("isolated and active child topics join the overview", async ({ page }) => {
