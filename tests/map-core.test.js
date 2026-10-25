@@ -173,6 +173,11 @@ test("artifact parser preserves reviewed publication context and sanitizes evide
   assert.equal(points[1].display_contributors, "");
   assert.deepEqual(points[1].context_evidence_urls, []);
 
+  source.points[0].publication_type = "conference_presentation";
+  const conferencePresentation = core.parseArtifact(source);
+  assert.equal(conferencePresentation.omitted_point_count, 0);
+  assert.equal(conferencePresentation.points[0].publication_type, "conference_presentation");
+
   source.points[0].publication_type = "withdrawn_article";
   const withoutInvalidContext = core.parseArtifact(source);
   assert.equal(withoutInvalidContext.points.length, source.points.length - 1);

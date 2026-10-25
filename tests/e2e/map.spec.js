@@ -528,6 +528,27 @@ test("reviewed context labels contributors and links source evidence", async ({ 
   expect(csv).toContain(',"Patent",');
 });
 
+test("conference presentations retain their type in details and export", async ({ page }) => {
+  const artifact = makeArtifact();
+  for (const point of artifact.points) {
+    point.publication_type = "conference_presentation";
+  }
+  await openMap(page, artifact);
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-meta")).toContainText("Conference presentation ·");
+  await expect(page.locator("#detail-contributors-label")).toHaveText("Authors");
+
+  await page.locator("#open-results").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#export-results").click();
+  const download = await downloadPromise;
+  const csv = fs.readFileSync(await download.path(), "utf8");
+  expect(csv).toContain(',"Conference presentation",');
+});
+
 test("edited book shows source-verified editors", async ({ page }) => {
   const artifact = makeArtifact();
   const editors = "C. Ho; W. A. Eaton; J. P. Collman; Q. H. Gibson; J. S. Leigh, Jr.; E. Margoliash; K. Moffat; W. R. Scheidt";

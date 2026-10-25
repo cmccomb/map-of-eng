@@ -485,7 +485,7 @@
     }
     const publicationType = point.publication_type === undefined
       ? "publication" : String(point.publication_type);
-    if (!["publication", "patent", "edited_book", "panel_transcript"].includes(publicationType)) {
+    if (!["publication", "patent", "edited_book", "panel_transcript", "conference_presentation"].includes(publicationType)) {
       throw new ArtifactError(`points[${index}].publication_type is invalid`);
     }
     const parsed = {
