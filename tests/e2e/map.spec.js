@@ -567,6 +567,21 @@ test("conference presentations keep their type and author attribution", async ({
   await expect(page.locator("#detail-contributors-label")).toHaveText("Authors");
 });
 
+test("doctoral dissertation keeps its type and author attribution", async ({ page }) => {
+  const artifact = makeArtifact();
+  for (const point of artifact.points) {
+    point.publication_type = "doctoral_dissertation";
+  }
+  await openMap(page, artifact);
+  await expectPublicationStatus(page, "8 publications");
+  const canvas = page.locator("#research-map");
+  await canvas.focus();
+  await canvas.press("Home");
+  await canvas.press("Enter");
+  await expect(page.locator("#detail-meta")).toContainText("Doctoral dissertation ·");
+  await expect(page.locator("#detail-contributors-label")).toHaveText("Authors");
+});
+
 test("reports determinate progress while publication data streams", async ({
   page,
 }) => {

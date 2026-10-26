@@ -491,6 +491,7 @@
       "edited_book",
       "panel_transcript",
       "conference_presentation",
+      "doctoral_dissertation",
     ].includes(publicationType)) {
       throw new ArtifactError(`points[${index}].publication_type is invalid`);
     }

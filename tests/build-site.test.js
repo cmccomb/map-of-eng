@@ -35,6 +35,7 @@ test("site build pins, validates, and stages the map artifact locally", async (t
   const outputDirectory = path.join(temporaryRoot, "site");
   const requestedUrls = [];
   const artifact = makeArtifact();
+  artifact.points[0].publication_type = "doctoral_dissertation";
   const fetchImpl = async (url) => {
     requestedUrls.push(url);
     if (url.includes("/api/datasets/")) return jsonResponse({ sha: REVISION });
