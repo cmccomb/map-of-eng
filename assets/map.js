@@ -307,6 +307,7 @@ function publicationTypeLabel(point) {
     edited_book: "Edited book",
     panel_transcript: "Panel transcript",
     conference_presentation: "Conference presentation",
+    doctoral_dissertation: "Doctoral dissertation",
   }[point.publication_type] || "Publication";
 }
 
