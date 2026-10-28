@@ -748,7 +748,7 @@ test("title pills are normalized, deduplicated, ORed, and removable", async ({
 
   await page
     .locator(".color-control")
-    .getByText("Title", { exact: true })
+    .getByText("Title terms", { exact: true })
     .click();
   await expect(page.locator("#map-legend")).toContainText("robot");
   await expect(page.locator("#map-legend")).toContainText("battery");
