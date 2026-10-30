@@ -109,7 +109,7 @@ function renderPendingPublications() {
     source.href = work.source_url;
     source.target = "_blank";
     source.rel = "noopener noreferrer";
-    source.textContent = "Open publication source ↗";
+    source.textContent = "Open source record ↗";
     item.append(title, meta, source);
     pendingList.append(item);
   }

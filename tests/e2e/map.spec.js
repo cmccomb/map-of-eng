@@ -116,7 +116,7 @@ test("pending selected works use a nonspatial keyboard-accessible list", async (
   await expect(dialog).toContainText("Reviewed work 3");
   await expect(dialog.locator("img")).toHaveCount(0);
   await expect(dialog).toContainText("<img src=x onerror=alert(1)> Reviewed work");
-  await expect(dialog.getByRole("link", { name: /Open publication source/ }).first())
+  await expect(dialog.getByRole("link", { name: /Open source record/ }).first())
     .toHaveAttribute("rel", "noopener noreferrer");
   const accessibility = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
