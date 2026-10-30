@@ -6,10 +6,13 @@ const SIZE_RADIUS_STEPS = 8;
 const DETAIL_KEYWORD_SCALE = 1.5;
 const ARTIFACT_FETCH_TIMEOUT_MS = 60_000;
 const RESULTS_PAGE_SIZE = 50;
+const PENDING_PAGE_SIZE = 50;
 const core = globalThis.ResearchMapCore;
 
 const state = {
   points: [],
+  pendingPublications: [],
+  pendingVisibleLimit: PENDING_PAGE_SIZE,
   matchedPoints: [],
   drawablePoints: [],
   screenPoints: [],
@@ -81,6 +84,52 @@ const state = {
 
 const canvas = document.querySelector("#research-map");
 const context = canvas.getContext("2d", { alpha: false });
+const pendingOpenButton = document.querySelector("#pending-publications-open");
+const pendingMarkerCount = document.querySelector("#pending-publications-marker-count");
+const pendingDialog = document.querySelector("#pending-publications-dialog");
+const pendingCloseButton = document.querySelector("#pending-publications-close");
+const pendingSummary = document.querySelector("#pending-publications-summary");
+const pendingList = document.querySelector("#pending-publications-list");
+const pendingMoreButton = document.querySelector("#pending-publications-more");
+
+function renderPendingPublications() {
+  const count = state.pendingPublications.length;
+  pendingOpenButton.hidden = !count;
+  pendingMarkerCount.textContent = `${count.toLocaleString()} ${count === 1 ? "publication" : "publications"}`;
+  pendingList.replaceChildren();
+  const visible = state.pendingPublications.slice(0, state.pendingVisibleLimit);
+  for (const work of visible) {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = work.title;
+    const meta = document.createElement("span");
+    const people = work.faculty_ids.map((id) => state.facultyById.get(id)?.display_name).join(", ");
+    meta.textContent = `${work.year ?? "Year unknown"} · ${people}`;
+    const source = document.createElement("a");
+    source.href = work.source_url;
+    source.target = "_blank";
+    source.rel = "noopener noreferrer";
+    source.textContent = "Open publication source ↗";
+    item.append(title, meta, source);
+    pendingList.append(item);
+  }
+  pendingSummary.textContent = `Showing ${visible.length.toLocaleString()} of ${count.toLocaleString()} publications. None has a topic or similarity position yet.`;
+  pendingMoreButton.hidden = visible.length === count;
+}
+
+pendingOpenButton.addEventListener("click", () => {
+  state.pendingVisibleLimit = PENDING_PAGE_SIZE;
+  renderPendingPublications();
+  pendingDialog.showModal();
+  pendingCloseButton.focus();
+});
+pendingCloseButton.addEventListener("click", () => pendingDialog.close());
+pendingDialog.addEventListener("close", () => pendingOpenButton.focus());
+pendingMoreButton.addEventListener("click", () => {
+  state.pendingVisibleLimit += PENDING_PAGE_SIZE;
+  renderPendingPublications();
+  (pendingMoreButton.hidden ? pendingCloseButton : pendingMoreButton).focus();
+});
 
 function resolvedTheme() {
   return document.documentElement.dataset.resolvedTheme === "light"
@@ -2976,6 +3025,8 @@ async function fetchJson(
 
 function setLoadingState() {
   state.ready = false;
+  pendingOpenButton.hidden = true;
+  if (pendingDialog.open) pendingDialog.close();
   resetLoadingProgress();
   statusElement.textContent = "Loading the publication landscape…";
   statusElement.classList.remove("error", "warning");
@@ -3012,6 +3063,8 @@ function setUnavailableState(error) {
   console.error(error);
   loadingOverlay.hidden = true;
   state.points = [];
+  state.pendingPublications = [];
+  pendingOpenButton.hidden = true;
   state.matchedPoints = [];
   state.drawablePoints = [];
   state.keywords = [];
@@ -3120,6 +3173,12 @@ async function loadMap() {
       state.keywords.map((item) => [item.keyword_id, item]),
     );
     state.points = artifact.points.map(preparePoint);
+    state.pendingPublications = [...artifact.pending_publications].sort(
+      (left, right) => (right.year ?? -Infinity) - (left.year ?? -Infinity) ||
+        left.title.localeCompare(right.title) || left.work_id.localeCompare(right.work_id),
+    );
+    state.pendingVisibleLimit = PENDING_PAGE_SIZE;
+    renderPendingPublications();
     state.schoolAffiliationCounts = new Map(
       state.schools.map((school) => [school.school_id, 0]),
     );

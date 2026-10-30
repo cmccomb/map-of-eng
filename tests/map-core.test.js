@@ -451,6 +451,69 @@ test("bad rows are omitted without allowing them to reserve a work id", () => {
   assert.equal(artifact.points.filter((point) => point.work_id === "p1").length, 1);
 });
 
+test("explicit pending works are separate from mapped points and leave retained presentation intact", () => {
+  const source = makeArtifact();
+  const baseline = core.parseArtifact(source);
+  assert.deepEqual(baseline.pending_publications, []);
+  source.schema_version = 8;
+  source.pending_publications = [{
+    work_id: "pending-1",
+    title: "A Reviewed Work Awaiting Placement",
+    year: 2026,
+    faculty_ids: ["f-alice", "f-bob"],
+    source_url: "https://example.org/publication/pending-1",
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: true,
+  }];
+  source.pending_publication_count = 1;
+  const parsed = core.parseArtifact(source);
+  assert.equal(parsed.pending_publications.length, 1);
+  assert.equal(parsed.pending_publications[0].collaboration_eligible, true);
+  assert.deepEqual(parsed.points, baseline.points);
+  assert.deepEqual(parsed.keywords, baseline.keywords);
+  assert.equal(parsed.point_count, baseline.point_count);
+});
+
+test("pending-publication contract fails closed on missing evidence, overlap, or private fields", () => {
+  const good = makeArtifact();
+  good.schema_version = 8;
+  good.pending_publications = [{
+    work_id: "pending-1",
+    title: "Reviewed Pending Work",
+    year: 2026,
+    faculty_ids: ["f-alice"],
+    source_url: "https://example.org/publication/pending-1",
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: false,
+  }];
+  good.pending_publication_count = 1;
+  assert.equal(core.parseArtifact(good).pending_publications[0].collaboration_eligible, false);
+  const mutations = [
+    [(a) => { delete a.pending_publication_count; }, /rows and count/],
+    [(a) => { a.pending_publication_count = 2; }, /count does not match/],
+    [(a) => { a.pending_publications[0].work_id = "p1"; }, /duplicates another work/],
+    [(a) => { a.pending_publications[0].faculty_ids = ["unknown"]; }, /unknown id/],
+    [(a) => { a.pending_publications[0].source_url = "javascript:alert(1)"; }, /public HTTPS/],
+    [(a) => { a.pending_publications[0].map_hold_reason = "unverified"; }, /map_hold_reason/],
+    [(a) => { a.pending_publications[0].release_decision = "held"; }, /release_decision/],
+    [(a) => { delete a.pending_publications[0].collaboration_eligible; }, /collaboration_eligible must be a boolean/],
+    [(a) => { a.pending_publications[0].collaboration_eligible = "false"; }, /collaboration_eligible must be a boolean/],
+    [(a) => { a.pending_publications[0].collaboration_eligible = null; }, /collaboration_eligible must be a boolean/],
+    [(a) => { a.pending_publications[0].raw_html = "private"; }, /unapproved fields/],
+    [(a) => { a.pending_publications[0].year = "2026"; }, /year is invalid/],
+  ];
+  for (const [mutate, message] of mutations) {
+    const artifact = structuredClone(good);
+    mutate(artifact);
+    assert.throws(() => core.parseArtifact(artifact), message);
+  }
+  const oldSchema = structuredClone(good);
+  oldSchema.schema_version = 7;
+  assert.throws(() => core.parseArtifact(oldSchema), /schema version 8/);
+});
+
 test("structural catalog and layout defects remain fatal", () => {
   const duplicateFaculty = makeArtifact();
   duplicateFaculty.catalogs.faculty.push({

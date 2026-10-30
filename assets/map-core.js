@@ -7,6 +7,7 @@
 
   const MAX_LAYOUTS = 8;
   const MAX_POINTS = 500000;
+  const MAX_PENDING_PUBLICATIONS = 50000;
   const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
   const OVERVIEW_TOPIC_MIN_ISOLATION = 3.5;
   const OVERVIEW_TOPIC_LIMIT = 3;
@@ -783,6 +784,71 @@
       }
     }
     const omittedPointCount = artifact.points.length - points.length;
+    const hasPendingRows = Object.hasOwn(artifact, "pending_publications");
+    const hasPendingCount = Object.hasOwn(artifact, "pending_publication_count");
+    if (hasPendingRows !== hasPendingCount) {
+      throw new ArtifactError("Pending publication rows and count must be supplied together");
+    }
+    let pendingPublications = [];
+    if (hasPendingRows) {
+      if (artifact.schema_version < 8) {
+        throw new ArtifactError("Pending publications require artifact schema version 8");
+      }
+      if (!Array.isArray(artifact.pending_publications) ||
+          artifact.pending_publications.length > MAX_PENDING_PUBLICATIONS) {
+        throw new ArtifactError(`Pending publications must contain at most ${MAX_PENDING_PUBLICATIONS} rows`);
+      }
+      if (artifact.pending_publication_count !== artifact.pending_publications.length) {
+        throw new ArtifactError("Pending publication count does not match rows");
+      }
+      const knownPointIds = new Set(artifact.points.map((point) => point?.work_id));
+      const pendingIds = new Set();
+      const allowedFields = new Set([
+        "work_id", "title", "year", "faculty_ids", "source_url", "release_decision", "map_hold_reason",
+        "collaboration_eligible",
+      ]);
+      pendingPublications = artifact.pending_publications.map((row, index) => {
+        const label = `pending_publications[${index}]`;
+        if (!isObject(row) || Object.keys(row).some((field) => !allowedFields.has(field))) {
+          throw new ArtifactError(`${label} has unapproved fields`);
+        }
+        const workId = requiredString(row.work_id, `${label}.work_id`, { maxLength: 500 });
+        if (knownPointIds.has(workId) || pendingIds.has(workId)) {
+          throw new ArtifactError(`${label}.work_id duplicates another work`);
+        }
+        pendingIds.add(workId);
+        const title = requiredString(row.title, `${label}.title`, { maxLength: 1000 });
+        if (row.year !== null && (!Number.isInteger(row.year) || row.year < 1800 || row.year > 2200)) {
+          throw new ArtifactError(`${label}.year is invalid`);
+        }
+        const facultyIds = knownIdArray(row.faculty_ids, faculty.ids, `${label}.faculty_ids`, {
+          allowEmpty: false,
+        });
+        const sourceUrl = safeHttpUrl(row.source_url);
+        if (!sourceUrl.startsWith("https://") || new URL(sourceUrl).username || new URL(sourceUrl).password) {
+          throw new ArtifactError(`${label}.source_url must be a public HTTPS URL`);
+        }
+        if (row.map_hold_reason !== "pending_topic_review") {
+          throw new ArtifactError(`${label}.map_hold_reason is invalid`);
+        }
+        if (row.release_decision !== "selected") {
+          throw new ArtifactError(`${label}.release_decision must be selected`);
+        }
+        if (typeof row.collaboration_eligible !== "boolean") {
+          throw new ArtifactError(`${label}.collaboration_eligible must be a boolean`);
+        }
+        return {
+          work_id: workId,
+          title,
+          year: row.year,
+          faculty_ids: facultyIds,
+          source_url: sourceUrl,
+          release_decision: "selected",
+          map_hold_reason: "pending_topic_review",
+          collaboration_eligible: row.collaboration_eligible,
+        };
+      });
+    }
     const warnings = [];
     if (
       Number.isInteger(artifact.point_count) &&
@@ -808,6 +874,8 @@
       keywords: keywords.items,
       keyword_levels: keywordLevels,
       points,
+      pending_publications: pendingPublications,
+      pending_publication_count: pendingPublications.length,
       omitted_point_count: omittedPointCount,
       omission_reasons: omissionReasons,
       warnings,
