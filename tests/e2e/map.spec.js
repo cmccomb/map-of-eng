@@ -88,6 +88,94 @@ test("loads cleanly with useful defaults and a complete department key", async (
   expect(consoleErrors).toEqual([]);
 });
 
+test("pending selected works use a nonspatial keyboard-accessible list", async ({ page }) => {
+  const artifact = makeArtifact();
+  artifact.schema_version = 8;
+  artifact.pending_publications = Array.from({ length: 51 }, (_, index) => ({
+    work_id: `pending-${index + 1}`,
+    title: index === 0 ? "<img src=x onerror=alert(1)> Reviewed work" : `Reviewed work ${index + 1}`,
+    year: 2026,
+    faculty_ids: ["f-alice"],
+    source_url: `https://example.org/publication/pending-${index + 1}`,
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: index % 2 === 0,
+  }));
+  artifact.pending_publication_count = 51;
+  await openMap(page, artifact);
+  const marker = page.getByRole("button", { name: /51 publications Awaiting topic review/ });
+  await expect(marker).toBeVisible();
+  await expectPublicationStatus(page, "8 publications");
+  await marker.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Publications awaiting topic review" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("#pending-publications-close")).toBeFocused();
+  await expect(dialog.locator("li")).toHaveCount(50);
+  await expect(dialog).toContainText("Reviewed work 2");
+  await expect(dialog).toContainText("Reviewed work 3");
+  await expect(dialog.locator("img")).toHaveCount(0);
+  await expect(dialog).toContainText("<img src=x onerror=alert(1)> Reviewed work");
+  await expect(dialog.getByRole("link", { name: /Open source record/ }).first())
+    .toHaveAttribute("rel", "noopener noreferrer");
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+    .analyze();
+  expect(accessibility.violations.filter((violation) =>
+    ["serious", "critical"].includes(violation.impact))).toEqual([]);
+  await dialog.getByRole("button", { name: "Show more" }).click();
+  await expect(dialog.locator("li")).toHaveCount(51);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(marker).toBeFocused();
+});
+
+test("pending marker stays in interface chrome on a small screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 720 });
+  const artifact = makeArtifact();
+  artifact.schema_version = 8;
+  artifact.pending_publications = [{
+    work_id: "pending-small",
+    title: "A reviewed work",
+    year: null,
+    faculty_ids: ["f-alice"],
+    source_url: "https://example.org/publication/pending-small",
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: false,
+  }];
+  artifact.pending_publication_count = 1;
+  await openMap(page, artifact);
+  const marker = page.locator("#pending-publications-open");
+  const box = await marker.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await marker.click();
+  await expect(page.getByRole("dialog")).toContainText("Year unknown");
+});
+
+test("malformed pending collaboration eligibility fails the whole artifact closed", async ({ page }) => {
+  const artifact = makeArtifact();
+  artifact.schema_version = 8;
+  artifact.pending_publications = [{
+    work_id: "pending-invalid-eligibility",
+    title: "Reviewed work with malformed eligibility",
+    year: 2026,
+    faculty_ids: ["f-alice", "f-bob"],
+    source_url: "https://example.org/publication/pending-invalid-eligibility",
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: "false",
+  }];
+  artifact.pending_publication_count = 1;
+  await serveArtifact(page, artifact);
+  await page.goto("/");
+  await expect(page.locator("#retry-load")).toBeVisible();
+  await expect(page.locator(".filter-controls")).toHaveAttribute("inert", "");
+  await expect(page.locator("#pending-publications-open")).toBeHidden();
+});
+
 test("school selection includes joint publications and persists in the view URL", async ({ page }) => {
   await openMap(page, makeSchoolArtifact());
   await expect(page.locator("#school-field")).toBeVisible();

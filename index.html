@@ -435,6 +435,17 @@
         </aside>
 
         <div class="map-shell" aria-label="Interactive publication map">
+          <button
+            id="pending-publications-open"
+            class="pending-publications-marker"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="pending-publications-dialog"
+            hidden
+          >
+            <strong id="pending-publications-marker-count"></strong>
+            <span>Awaiting topic review · not positioned on map</span>
+          </button>
           <canvas
             id="research-map"
             tabindex="0"
@@ -491,6 +502,29 @@
             </button>
           </div>
         </div>
+
+        <dialog
+          id="pending-publications-dialog"
+          class="pending-publications-dialog"
+          aria-labelledby="pending-publications-title"
+          aria-describedby="pending-publications-description"
+        >
+          <div class="pending-publications-heading">
+            <div>
+              <h2 id="pending-publications-title">Publications awaiting topic review</h2>
+              <p id="pending-publications-description">
+                These selected publications are listed here but have no map
+                position or topic yet. Map filters and counts apply only to positioned dots.
+              </p>
+            </div>
+            <button id="pending-publications-close" type="button" aria-label="Close awaiting publications">×</button>
+          </div>
+          <p id="pending-publications-summary" aria-live="polite"></p>
+          <ol id="pending-publications-list" aria-label="Publications awaiting topic review"></ol>
+          <button id="pending-publications-more" class="secondary-button" type="button" hidden>
+            Show more
+          </button>
+        </dialog>
 
         <aside
           id="detail-panel"
