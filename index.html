@@ -303,8 +303,13 @@
             <legend>Color by</legend>
             <div class="segmented-control color-control">
               <label>
-                <input type="radio" name="color-mode" value="title" />
-                <span>Title</span>
+                <input
+                  type="radio"
+                  name="color-mode"
+                  value="title"
+                  aria-describedby="color-note"
+                />
+                <span>Title terms</span>
               </label>
               <label>
                 <input type="radio" name="color-mode" value="school" />
@@ -332,6 +337,10 @@
                 <span>Citations</span>
               </label>
             </div>
+            <p id="color-note" class="field-note color-note">
+              Recolors publication dots. In Title terms, a dot takes the color
+              of a matching title search above; with no terms, dots share one color.
+            </p>
           </fieldset>
 
           <fieldset class="size-fieldset">
