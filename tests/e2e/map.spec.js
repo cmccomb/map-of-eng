@@ -103,12 +103,12 @@ test("pending selected works use a nonspatial keyboard-accessible list", async (
   }));
   artifact.pending_publication_count = 51;
   await openMap(page, artifact);
-  const marker = page.getByRole("button", { name: /51 publications Awaiting topic review/ });
+  const marker = page.getByRole("button", { name: /51 publications Included in dataset/ });
   await expect(marker).toBeVisible();
   await expectPublicationStatus(page, "8 publications");
   await marker.focus();
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Publications awaiting topic review" });
+  const dialog = page.getByRole("dialog", { name: "Publications pending map placement" });
   await expect(dialog).toBeVisible();
   await expect(page.locator("#pending-publications-close")).toBeFocused();
   await expect(dialog.locator("li")).toHaveCount(50);

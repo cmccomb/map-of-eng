@@ -113,7 +113,7 @@ function renderPendingPublications() {
     item.append(title, meta, source);
     pendingList.append(item);
   }
-  pendingSummary.textContent = `Showing ${visible.length.toLocaleString()} of ${count.toLocaleString()} publications. None has a topic or similarity position yet.`;
+  pendingSummary.textContent = `Showing ${visible.length.toLocaleString()} of ${count.toLocaleString()} publications. These records are included in the dataset; topic-based map placement is pending.`;
   pendingMoreButton.hidden = visible.length === count;
 }
 

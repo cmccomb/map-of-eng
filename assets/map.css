@@ -958,7 +958,7 @@ select:focus {
   width: min(18rem, calc(100vw - 2rem));
   min-height: 3.2rem;
   padding: 0.55rem 0.8rem;
-  border: 1px solid var(--warm);
+  border: 1px solid var(--line-strong);
   border-radius: 0.7rem;
   background: var(--overlay-strong);
   box-shadow: var(--overlay-shadow);
@@ -974,7 +974,7 @@ select:focus {
 }
 
 .pending-publications-marker strong {
-  color: var(--warm);
+  color: var(--accent);
   font-size: 0.75rem;
 }
 
